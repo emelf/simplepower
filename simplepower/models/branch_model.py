@@ -2,15 +2,13 @@ from typing import Optional
 from math import sqrt
 from sympy import symbols, diff, lambdify, cos
 import numpy as np
+import numdifftools as nd 
 from dataclasses import dataclass
 
 @dataclass
 class BranchDataClass: 
     """Data class for any branch model, including transmission line, cable, or trafo. \n
     NOTE: Missing functionallity for phase-shifters. \n 
-    ⠀⠀o-----▭-----o\n
-    V_1⠀▯⠀⠀⠀▯⠀⠀V_2  \n
-    ⠀⠀o------------o \n
     NOTE: All values can be specified in either pu or in the following units. \n 
     If defined in real units, call the "convert_to_pu" method to get the pu class representation. \n
     S_base_mva: Base power [MVA] (for converting between ohms/Simens to pu) \n
@@ -82,17 +80,42 @@ class TrafoDataClass(BranchDataClass):
 
 
 class BranchModel: 
-    def __init__(self, branch_data: BranchDataClass): 
+    def __init__(self, branch_data: BranchDataClass, mode: Optional[str]="num"): 
         """
-        Internal functions: \n
-        model.y -> [P_loss], returns line power losses \n 
-        model.dy_dx -> [[dP_loss_dd1, dP_loss_dd2, dP_loss_dV1, dP_loss_dV2]] \n
-        When inputing anything to the y or dy_dx functions, the X = [d_1, d_2, V_1, V_2]
+        Defines the equations for power losses. 
+
+        Attributes 
+        ----------
+        branch_data: BranchDataClass, either a dataclass from line or trafo model 
+        mode: Either symbolic or numeric, decides if equations are sympy-symbolic or python numerical. Options: ('num', 'sym')
+
+        Internal attributes 
+        ---------
+        model.x_names: A tuple of the state names required for the model to work 
+        model.y_names: A tuple of the algebraic variable names calculated in the model
+
+        Internal functions: 
+        ----------
+        model.y -> [P_loss, Q_loss], returns line power losses \n 
+        model.dy_dx -> Grad(model.y w.r.t. model.x), shape = (N_y, N_x) \n
+        When inputing anything to the y or dy_dx functions, the X = ndarray([d_1, d_2, V_1, V_2])
         """
         self.md = branch_data
-        self.ex_states = ("d_1", "d_2", "V_1", "V_2") # Externally obtained states
-        self.alg_vars = ("P_loss_pu") # Alg vars noted y
+        self.x_names = ("d_1", "d_2", "V_1", "V_2") # Externally obtained states
+        self.y_names = ("P_loss_pu", "Q_loss_pu") # Alg vars noted y
+        self.mode = mode
+        if mode == 'sym': 
+            self._define_symbolic()
+        else: 
+            self._define_numerical()
 
+    def _define_numerical(self): 
+        P_loss = lambda X: X[2]**2*self.md.g_1 + X[3]**2*self.md.g_2 + self.md.g_l*(X[2]**2 + X[3]**2 -2*X[2]*X[3]*cos(X[0]-X[1]))
+        Q_loss = lambda X: X[2]**2*self.md.b_1 + X[3]**2*self.md.b_2 + self.md.b_l*(X[2]**2 + X[3]**2 -2*X[2]*X[3]*cos(X[0]-X[1]))
+        self.y = lambda X: np.array([P_loss(X), Q_loss(X)], dtype=float)
+        self.dy_dx = nd.Gradient(self.y)
+
+    def _define_symbolic(self): 
         V1, V2, d1, d2 = symbols("V1 V2 d1 d2")
         X_sym = (d1, d2, V1, V2)
 
