@@ -58,16 +58,16 @@ class GridDataClass:
         for _, row in self._grid_trafos.iterrows(): 
             trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], 
                                         V_SCH=row["V_SCH_pu"], P_Cu=row["P_Cu_pu"], I_E=row["I_E_pu"], 
-                                        P_Fe=row["P_Fe_pu"]
+                                        P_Fe=row["P_Fe_pu"], is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], 
+                                        tap_min=row["tap_min"], tap_max=row["tap_max"]
                                         )
-            trafo_data = trafo_data.convert_to_pu()
+            # if not trafo_data.is_pu:
+            #     trafo_data = trafo_data.convert_to_pu()
             trafo_data = trafo_data.change_base(self.S_base_mva, self.V_base_kV)
             i = row["idx_hv"]
             j = row["idx_lv"]
             y_bus[i, j] -= trafo_data.y_series
             y_bus[j, i] -= trafo_data.y_series
-            # y_bus[i, i] += trafo_data.y_1_shunt
-            # y_bus[j, j] += trafo_data.y_2_shunt
             y_bus[i, i] += trafo_data.y_1_shunt
             y_bus[j, j] += trafo_data.y_2_shunt
 
