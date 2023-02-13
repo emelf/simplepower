@@ -17,6 +17,9 @@ grid_model_1 = GridModel(grid_data_1)
 grid_data_2 = GridDataClass("tests/test_grid_2.xlsx", f_nom=50)
 grid_model_2 = GridModel(grid_data_2) 
 
+grid_data_3 = GridDataClass("tests/test_grid_3.xlsx", f_nom=50)
+grid_model_3 = GridModel(grid_data_3) 
+
 # grid_data_4 = GridDataClass("tests/test_grid_4.xlsx", f_nom=50)
 # grid_model_4 = GridModel(grid_data_2) 
 
@@ -47,13 +50,6 @@ class TestDataClass(unittest.TestCase):
                               [-0.7117647 +2.8470588j, -0.35588235+1.4235294j, 1.067647  -4.270588j ]], dtype=np.complex64)
         self.assertTrue((np.abs(y_bus - y_bus_res) < 1e-6).all()) # Checks if all elements are less than 1e-6
 
-    # def test_y_bus_model_4(self): 
-    #     y_bus = grid_data_4.get_Y_bus() 
-    #     y_bus_res = np.array([[ 1.4235294 -5.6941175j, -0.7117647 +2.8470588j, -0.7117647 +2.8470588j],
-    #                           [-0.7117647 +2.8470588j,  1.067647  -4.270588j , -0.35588235+1.4235294j],
-    #                           [-0.7117647 +2.8470588j, -0.35588235+1.4235294j, 1.067647  -4.270588j ]], dtype=np.complex64)
-    #     self.assertTrue((np.abs(y_bus - y_bus_res) < 1e-6).all()) # Checks if all elements are less than 1e-6
-
 
 class TestGridModel(unittest.TestCase): 
     def test_basic_model1(self): 
@@ -69,6 +65,13 @@ class TestGridModel(unittest.TestCase):
         self.assertTrue((np.abs((pf_res.Q_calc -  np.array([0.90532378,  10.84240404, -10.]))) < 1e-6).all())
         self.assertTrue((np.abs((pf_res.V_buses - np.array([1.        , 1.05      , 0.94256155])))   < 1e-6).all())
         self.assertTrue((np.abs((pf_res.d_buses - np.array([0.        ,  0.02831531, -0.0333914]))) < 1e-6).all())
+
+    def test_basic_model3(self): 
+        pf_res = grid_model_3.powerflow() 
+        self.assertTrue((np.abs((pf_res.P_calc -  np.array([10.39785418, -50., 40., 5., -5.]))) < 1e-6).all())
+        self.assertTrue((np.abs((pf_res.Q_calc -  np.array([0.36225115, -20., 4.67633458, 18.69198958, -2.]))) < 1e-6).all())
+        self.assertTrue((np.abs((pf_res.V_buses - np.array([1. , 0.99667064, 1., 1.02, 0.97060469])))   < 1e-6).all())
+        self.assertTrue((np.abs((pf_res.d_buses - np.pi/180*np.array([0., -0.68015495, -0.16768721, -0.92423472, -2.59850105]))) < 1e-6).all())
 
 
 if __name__ == "__main__": 

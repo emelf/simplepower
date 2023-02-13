@@ -14,3 +14,7 @@ class PowerFlowResult:
         str3 = f"V_buses = {np.round(self.V_buses, 4)} pu \n" 
         str4 = f"d_buses = {np.round(self.d_buses*180/np.pi, 4)} deg \n" 
         return str1 + str2 + str3 + str4
+    
+    def get_P_losses(self): 
+        """Returns P_loss_MW"""
+        return np.sum(self.P_calc)

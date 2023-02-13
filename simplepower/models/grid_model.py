@@ -16,7 +16,6 @@ from utils import PowerFlowResult
 from models.branch_model import LineDataClass, TrafoDataClass
 
 
-# @dataclass
 class GridDataClass: 
     def __init__(self, filename: str, f_nom: float): 
         self._grid_buses = pd.read_excel(filename, sheet_name="busbars")
@@ -28,13 +27,10 @@ class GridDataClass:
         self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
         self.V_base_kV = self._grid_buses["v_nom_kv"].max()
         self.f_nom = f_nom
-        self.N_buses = self._grid_buses.shape[0]
-    
-    # def __post_init__(self): 
-        self._y_bus = self._create_y_bus() 
+        self.N_buses = self._grid_buses.shape[0] 
 
-    def _create_y_bus(self):
-        y_bus = np.zeros((self.N_buses, self.N_buses), dtype=np.complex64)
+        # Create all line models: 
+        self._line_data = [] 
         for _, row in self._grid_lines.iterrows(): 
             v_base = row["v_nom_kv"]
             r = row["r_ohm_per_km"]
@@ -43,33 +39,39 @@ class GridDataClass:
             i = row["from_bus_idx"]
             j = row["to_bus_idx"]
             length = row["length_km"]
-            line_data = LineDataClass(self.S_base_mva, v_base, r, x, c, length, is_pu=bool(row["is_pu"]), f_nom=self.f_nom)
+            line_data = LineDataClass(self.S_base_mva, v_base, r, x, i, j, c, length, is_pu=bool(row["is_pu"]), f_nom=self.f_nom)
 
             if not bool(row["is_pu"]):
                 line_data = line_data.convert_to_pu().change_base(self.S_base_mva, self.V_base_kV)
             else: 
                 line_data = line_data.change_base(self.S_base_mva, self.V_base_kV)
-
-            y_bus[i, j] -= line_data.y_series
-            y_bus[j, i] -= line_data.y_series
-            y_bus[i, i] += line_data.y_1_shunt
-            y_bus[j, j] += line_data.y_2_shunt
-
+            self._line_data.append(line_data)
+        
+        # Create all trafo models: 
+        self._trafo_data = [] 
         for _, row in self._grid_trafos.iterrows(): 
-            trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], 
-                                        V_SCH=row["V_SCH_pu"], P_Cu=row["P_Cu_pu"], I_E=row["I_E_pu"], 
-                                        P_Fe=row["P_Fe_pu"], is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], 
-                                        tap_min=row["tap_min"], tap_max=row["tap_max"]
+            trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], V_SCH=row["V_SCH_pu"], 
+                                        P_Cu=row["P_Cu_pu"], I_E=row["I_E_pu"], P_Fe=row["P_Fe_pu"], idx_hv=row["idx_hv"], idx_lv=row["idx_lv"], 
+                                        is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], tap_min=row["tap_min"], tap_max=row["tap_max"]
                                         )
-            # if not trafo_data.is_pu:
-            #     trafo_data = trafo_data.convert_to_pu()
             trafo_data = trafo_data.change_base(self.S_base_mva, self.V_base_kV)
-            i = row["idx_hv"]
-            j = row["idx_lv"]
-            y_bus[i, j] -= trafo_data.y_series
-            y_bus[j, i] -= trafo_data.y_series
-            y_bus[i, i] += trafo_data.y_1_shunt
-            y_bus[j, j] += trafo_data.y_2_shunt
+            self._trafo_data.append(trafo_data)
+
+        self._y_bus = self._create_y_bus()
+
+    def _create_y_bus(self):
+        y_bus = np.zeros((self.N_buses, self.N_buses), dtype=np.complex64)
+        for line_data in self._line_data: 
+            y_bus[line_data.idx_1, line_data.idx_2] -= line_data.y_series
+            y_bus[line_data.idx_2, line_data.idx_1] -= line_data.y_series
+            y_bus[line_data.idx_1, line_data.idx_1] += line_data.y_1_shunt
+            y_bus[line_data.idx_2, line_data.idx_2] += line_data.y_2_shunt
+
+        for trafo_data in self._trafo_data: 
+            y_bus[trafo_data.idx_1, trafo_data.idx_2] -= trafo_data.y_series
+            y_bus[trafo_data.idx_2, trafo_data.idx_1] -= trafo_data.y_series
+            y_bus[trafo_data.idx_1, trafo_data.idx_1] += trafo_data.y_1_shunt
+            y_bus[trafo_data.idx_2, trafo_data.idx_2] += trafo_data.y_2_shunt
 
         for i, y_row in enumerate(y_bus): 
             y_bus[i, i] += - sum(y_row[:i]) - sum(y_row[i+1:])
@@ -190,7 +192,7 @@ class GridModel:
             P_root = (P_calc - P_vals)[self.P_mask]
             Q_root = (Q_calc - Q_vals)[self.Q_mask]
 
-            S_root = np.zeros(len(P_root)+len(Q_root)) # Do this initialization to be numba compatible 
+            S_root = np.zeros(len(X)) # Do this initialization to be numba compatible 
             S_root[:len(P_root)] = P_root 
             S_root[len(P_root):] = Q_root
             return S_root 
@@ -199,7 +201,7 @@ class GridModel:
     
     def _calc_pf(self) -> PowerFlowResult: 
         X0 = np.zeros(len(self.delta_mask) + len(self.V_mask))
-        X0[self.V_mask] = 1.0 # flat voltage start
+        X0[self.md.N_delta:] = 1.0 # flat voltage start
         pf_eqs = self._setup_pf() 
         sol = root(pf_eqs, X0, tol=1e-8)
         return sol 
@@ -220,6 +222,8 @@ class GridModel:
         PowerFlowResult 
         """
         sol = self._calc_pf()
+        if not sol.success: 
+            print(sol)
         sol = self._get_pf_sol(sol) 
         return sol 
 
