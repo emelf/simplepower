@@ -127,14 +127,14 @@ class TrafoDataClass(BranchDataClass):
         # Collect and transform from star to delta 
         Y_1_star = Y_hv_12
         Y_2_star = Y_lv_12 
-        Y_3_star = Y_hv_2 + Y_m 
+        Y_3_star = Y_hv_2 + Y_m #/2
 
         Y_num = Y_1_star + Y_2_star + Y_3_star 
         Y_12 = Y_1_star * Y_2_star / Y_num 
         Y_23 = Y_2_star * Y_3_star / Y_num 
         Y_31 = Y_3_star * Y_1_star / Y_num 
-        Y_hv = Y_31 + Y_hv_1 
-        Y_lv = Y_23  
+        Y_hv = Y_31 + Y_hv_1
+        Y_lv = Y_23 #+ Y_m/2 * self.b1**2
         Z_12 = Y_12**-1
 
         super().__init__(S_base_mva, self.V_n_hv, Z_12.real, Z_12.imag, idx_hv, idx_lv, Y_hv.real, Y_hv.imag, 
