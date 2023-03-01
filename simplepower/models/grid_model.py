@@ -249,6 +249,7 @@ class GridModel:
         return sol 
                 
 
+<<<<<<< HEAD
 class ORPDHandler: 
     # TODO: Create a mapping between bus idx and generator/load idx in their respective dataframes. 
     def __init__(self, grid_model: GridModel, V_control_idx: Sequence[int], 
@@ -279,3 +280,28 @@ class ORPDHandler:
     def solve_ORPD(self) -> OptimizeResult: 
         sol = minimize(self.ORPD_func, x0=np.ones(len(self.V_control_idx)), constraints=self.cons)
         return sol 
+=======
+    def get_pf_grad_est(self, v_vals, d_vals, pf_eqs): 
+        """Numerical estimate of the gradient"""
+        d_step = 1e-3 
+        X = np.concatenate([d_vals, v_vals])
+        g_d = pf_eqs(X) # Difference in PF calc 
+        J = np.zeros((len(g_d), len(X)))
+        for i, g in enumerate(g_d): 
+            X_new = X.copy()
+            X_new[i] += d_step
+            g_new = pf_eqs(X_new)
+            J[:, i] = (g_new - g_d)/d_step 
+        return J
+
+    def update_X_estimate(self, X, J, g_d, threshold=1e-7): 
+        dX = np.linalg.inv(J) @ g_d 
+        X_next = X - dX 
+        if (np.abs(dX) < threshold).all():
+            done = True 
+        else: 
+            done = False 
+        return X_next, done 
+
+            
+>>>>>>> main
