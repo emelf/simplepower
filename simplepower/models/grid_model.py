@@ -1,8 +1,9 @@
 import numpy as np 
 import pandas as pd 
 from dataclasses import dataclass 
-from scipy.optimize import root, OptimizeResult
-from typing import Tuple, Sequence, Callable
+from scipy.optimize import root, OptimizeResult, minimize, LinearConstraint
+from typing import Tuple, Sequence, Callable, Optional
+from numpy.typing import ArrayLike
 import cmath as cm
 
 import os 
@@ -153,6 +154,26 @@ class GridDataClass:
             Q_vals[row["bus_idx"]] -= row["q_nom_mvar"]/self.S_base_mva
 
         return P_vals, Q_vals 
+    
+    def change_P_gen(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
+        for P_new, idx in zip(P_vals_mw, indices): 
+            # self._grid_gens.loc[idx, "p_set_mw"] = P_new
+            self._grid_gens[self._grid_gens["bus_idx"]==idx].at[0, "p_set_mw"] = P_new
+
+    def change_V_gen(self, indices: Sequence[int], V_vals_mw: Sequence[float]): 
+        for V_new, idx in zip(V_vals_mw, indices): 
+            # self._grid_gens.loc[idx, "v_set_pu"] = V_new
+            self._grid_gens[self._grid_gens["bus_idx"]==idx].at[0, "v_set_pu"] = V_new
+
+    def change_P_load(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
+        for P_new, idx in zip(P_vals_mw, indices): 
+            # self._grid_loads.loc[idx, "p_nom_mw"] = P_new
+            self._grid_loads.at[idx, "p_nom_mw"] = P_new
+
+    def change_Q_load(self, indices: Sequence[int], Q_vals_mw: Sequence[float]): 
+        for Q_new, idx in zip(Q_vals_mw, indices): 
+            # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
+            self._grid_loads.at[idx, "q_nom_mvar"] = Q_new
 
 class GridModel: 
     def __init__(self, grid_data: GridDataClass): 
@@ -226,5 +247,35 @@ class GridModel:
             print(sol)
         sol = self._get_pf_sol(sol) 
         return sol 
+                
 
-            
+class ORPDHandler: 
+    # TODO: Create a mapping between bus idx and generator/load idx in their respective dataframes. 
+    def __init__(self, grid_model: GridModel, V_control_idx: Sequence[int], 
+                 V_min: Optional[ArrayLike]=0.95, 
+                 V_max: Optional[ArrayLike]=1.05): 
+        self.grid_model = grid_model 
+        self.V_control_idx = V_control_idx
+        self.ORPD_func = self.get_ORPD_func()
+        self.V_min = V_min
+        self.V_max = V_max 
+
+        self.cons1 = [{'type': 'ineq', 'fun': lambda x: -x[idx] + 0.8} for idx in self.V_control_idx]
+        self.cons2 = [{'type': 'ineq', 'fun': lambda x: x[idx] - 1.2} for idx in self.V_control_idx]
+
+        self.cons = [] 
+        [self.cons.append(cons) for cons in self.cons1]
+        [self.cons.append(cons) for cons in self.cons2]
+        self.cons = LinearConstraint(np.eye(len(self.V_control_idx)), lb=self.V_min, ub=self.V_max)
+
+    def get_ORPD_func(self): 
+
+        def ORPD(V_vals): 
+            self.grid_model.md.change_V_gen(self.V_control_idx, V_vals)
+            sol = self.grid_model.powerflow()
+            return sol.get_P_losses()
+        return ORPD 
+    
+    def solve_ORPD(self) -> OptimizeResult: 
+        sol = minimize(self.ORPD_func, x0=np.ones(len(self.V_control_idx)), constraints=self.cons)
+        return sol 
