@@ -9,10 +9,10 @@ class PowerFlowResult:
         self.S_base = S_base
 
     def __repr__(self): 
-        str1 = f"P_calc = {np.round(self.P_calc, 3)} MW \n" 
-        str2 = f"Q_calc = {np.round(self.Q_calc, 3)} Mvar \n" 
-        str3 = f"V_buses = {np.round(self.V_buses, 4)} pu \n" 
-        str4 = f"d_buses = {np.round(self.d_buses*180/np.pi, 4)} deg \n" 
+        str1 = f"P_calc = {np.round(self.P_calc, 4)} MW \n" 
+        str2 = f"Q_calc = {np.round(self.Q_calc, 4)} Mvar \n" 
+        str3 = f"V_buses = {np.round(self.V_buses, 6)} pu \n" 
+        str4 = f"d_buses = {np.round(self.d_buses*180/np.pi, 6)} deg \n" 
         return str1 + str2 + str3 + str4
     
     def get_P_losses(self): 

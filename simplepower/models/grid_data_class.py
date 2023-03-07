@@ -1,25 +1,144 @@
-import numpy as np 
+from typing import Optional, Sequence, Tuple
 import pandas as pd 
-from dataclasses import dataclass 
-from scipy.optimize import root, OptimizeResult, minimize, LinearConstraint
-from typing import Tuple, Sequence, Callable, Optional
-from numpy.typing import ArrayLike
-import cmath as cm
+import numpy as np 
+from branch_model import LineDataClass, TrafoDataClass
+from enum import Enum
 
-import os 
-import inspect 
-import sys
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-sys.path.insert(0, parentdir)
+from import_grid_model import get_item_dict
 
-from utils import PowerFlowResult
-from models.branch_model import LineDataClass, TrafoDataClass
+"""
+Two methods of import is supported at the moment: 
+1) Manual excel sheet insertion + import excel file through pandas
+2) IEEE Common Data Format and .txt file. 
+
+Both methods should end up with five pandas dataframes: _grid_buses, _grid_lines, _grid_trafos, _grid_loads, _grid_gens
+
+_grid_buses: [bus_idx	name	v_nom_kv]
+_grid_lines: [name	v_nom_kv	length_km	r_ohm_per_km	x_ohm_per_km	c_uf_per_km	from_bus_idx	to_bus_idx	is_pu]
+_grid_trafos: [name	S_nom	V_hv_kV	V_lv_kV	V_SCH_pu	P_Cu_pu	I_E_pu	P_Fe_pu	idx_hv	idx_lv	tap_pos	tap_change	tap_min	tap_max]
+_grid_loads: [name	v_base_kV	s_base_mva	v_nom_pu	p_nom_mw	q_nom_mvar	bus_idx	g_shunt_pu	b_shunt_pu]
+_grid_gens: [name	S_rated_mva	v_set_pu	p_set_mw	bus_idx	is_slack]
+"""
+
+class FileType(Enum): 
+    Excel = 0, 
+    IEEE = 1, 
+
+class ExcelImport: 
+    def __init__(self, filename): 
+        self.filename = filename
+        self._real_excel(filename) 
+    
+    def _real_excel(self, filename): 
+        self._grid_buses = pd.read_excel(filename, sheet_name="busbars")
+        self._grid_lines = pd.read_excel(filename, sheet_name="lines")
+        self._grid_trafos  = pd.read_excel(filename, sheet_name="trafos")
+        self._grid_loads = pd.read_excel(filename, sheet_name="loads")
+        self._grid_gens  = pd.read_excel(filename, sheet_name="gens")
+
+    def get_data(self): 
+        return (self._grid_buses, 
+                self._grid_lines, 
+                self._grid_trafos,
+                self._grid_loads,
+                self._grid_gens)
+    
+
+class IEEEImport: 
+    def __init__(self, filename): 
+        self.filename = filename 
+        self._read_IEEE(filename)
+
+    def _read_IEEE(self, filename): 
+        self.bus_data, self.branch_data, self.S_base = get_item_dict(self.filename)
+
+    def _get_bus_data(self): 
+        bus_data = {}
+        bus_data["bus_idx"] = self.bus_data["bus_num"] - 1
+        bus_data["name"] = self.bus_data["name"]
+        bus_data["v_nom_kv"] = self.bus_data["base_kV"]
+        return bus_data 
+
+    def _get_line_data(self): 
+        line_data = {}
+        line_idx = np.where((self.branch_data["tap_ratio_final"] == 0.0))[0]
+        line_data["name"] = np.array([f"Line {i}" for i in range(len(line_idx))])
+        line_data["length_km"] = 1.0 
+        line_data["r_ohm_per_km"] = self.branch_data["r_pu"][line_idx]
+        line_data["x_ohm_per_km"] = self.branch_data["x_pu"][line_idx]
+        line_data["c_uf_per_km"] = 2*np.pi*self.branch_data["b_pu"][line_idx]
+        line_data["from_bus_idx"] = self.branch_data["tap_bus"][line_idx]-1
+        line_data["to_bus_idx"] = self.branch_data["Z_bus"][line_idx]-1
+        line_data["is_pu"] = [1 for _ in range(len(line_idx))] 
+        line_data["v_nom_kv"] = self.bus_data["base_kV"][line_data["from_bus_idx"]]
+        return line_data 
+    
+    def _get_trafo_data(self): 
+        trafo_data = {}
+        trafo_idx = np.where((self.branch_data["tap_ratio_final"] > 0.0))[0]
+        trafo_data["name"] = np.array([f"Trafo {i}" for i in range(len(trafo_idx))])
+        trafo_data["S_nom"] = np.array([self.S_base for _ in range(len(trafo_idx))])
+        trafo_r = self.branch_data["r_pu"][trafo_idx]
+        trafo_x = self.branch_data["x_pu"][trafo_idx]
+        trafo_data["V_SCH_pu"] = np.sqrt(trafo_r**2 + trafo_x**2)
+        trafo_data["P_Cu_pu"] = trafo_r
+        trafo_data["I_E_pu"] = np.zeros(len(trafo_idx))
+        trafo_data["P_Fe_pu"] = np.zeros(len(trafo_idx))
+        trafo_data["idx_hv"] = self.branch_data["tap_bus"][trafo_idx]-1
+        trafo_data["idx_lv"] = self.branch_data["Z_bus"][trafo_idx]-1
+        trafo_data["tap_pos"] = np.ones(len(trafo_idx))
+        trafo_data["tap_change"] = 1 - self.branch_data["tap_ratio_final"][trafo_idx]
+        trafo_data["tap_min"] = self.branch_data["tap_min"][trafo_idx]
+        trafo_data["tap_max"] = self.branch_data["tap_max"][trafo_idx]
+        trafo_data["V_hv_kV"] = self.bus_data["base_kV"][trafo_data["idx_hv"]]
+        trafo_data["V_lv_kV"] = self.bus_data["base_kV"][trafo_data["idx_lv"]]
+        return trafo_data
+    
+    def _get_load_data(self): 
+        load_data = {}
+        load_idx = np.where(np.logical_or(self.bus_data["load_mw"] > 0.0, self.bus_data["load_mvar"] > 0.0))[0]
+        load_data["name"] = np.array([f"Load bus {idx}" for idx in load_idx])
+        load_data["v_base_kV"] = self.bus_data["base_kV"][load_idx]
+        load_data["s_base_mva"] = np.ones(len(load_idx))*self.S_base
+        load_data["v_nom_pu"] = np.ones(len(load_idx))
+        load_data["p_nom_mw"] = self.bus_data["load_mw"][load_idx]
+        load_data["q_nom_mvar"] = self.bus_data["load_mvar"][load_idx]
+        load_data["bus_idx"] = load_idx
+        load_data["g_shunt_pu"] = self.bus_data["shunt_g_pu"][load_idx]
+        load_data["b_shunt_pu"] = self.bus_data["shunt_b_pu"][load_idx]
+        return load_data
+    
+    def _get_gen_data(self): 
+        gen_data = {}
+        gen_idx = np.where(self.bus_data["gen_mw"] > 0.0)[0]
+        gen_data["name"] = np.array([f"Gen {idx}" for idx in gen_idx])
+        gen_data["S_rated_mva"] = np.ones(len(gen_idx))*self.S_base
+        gen_data["v_set_pu"] = self.bus_data["final_v"][gen_idx]
+        gen_data["p_set_mw"] = self.bus_data["gen_mw"][gen_idx]
+        gen_data["bus_idx"] = gen_idx 
+        gen_type = self.bus_data["type"][gen_idx]
+        gen_data["is_slack"] = np.array(np.equal(gen_type, 3), dtype=int)
+        return gen_data 
+
+    def get_data(self): 
+        bus_data = self._get_bus_data()
+        line_data = self._get_line_data()
+        trafo_data = self._get_trafo_data() 
+        load_data = self._get_load_data() 
+        gen_data = self._get_gen_data() 
+
+        bus_data = pd.DataFrame(bus_data)
+        line_data = pd.DataFrame(line_data)
+        trafo_data = pd.DataFrame(trafo_data)
+        load_data = pd.DataFrame(load_data)
+        gen_data = pd.DataFrame(gen_data)
+
+        return bus_data, line_data, trafo_data, load_data, gen_data 
 
 
 class GridDataClass: 
-    def __init__(self, filename: str, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None):         
-        self._real_excel(filename)
+    def __init__(self, filename: str, filetype: FileType, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None):         
+        self._read_data(filename, filetype)
         self._set_base_vals(f_nom)
         self._set_init_condition(V_init, delta_init)
         self._set_line_data()
@@ -27,12 +146,14 @@ class GridDataClass:
         self._set_shunt_data()
         self._y_bus = self._create_y_bus()
 
-    def _real_excel(self, filename): 
-        self._grid_buses = pd.read_excel(filename, sheet_name="busbars")
-        self._grid_lines = pd.read_excel(filename, sheet_name="lines")
-        self._grid_trafos  = pd.read_excel(filename, sheet_name="trafos")
-        self._grid_loads = pd.read_excel(filename, sheet_name="loads")
-        self._grid_gens  = pd.read_excel(filename, sheet_name="gens")
+    def _read_data(self, filename, filetype): 
+        match filetype: 
+            case FileType.Excel: 
+                data = ExcelImport(filename)
+            case FileType.IEEE: 
+                data = IEEEImport(filename)
+
+        (self._grid_buses, self._grid_lines, self._grid_trafos, self._grid_loads, self._grid_gens) = data.get_data()
 
     def _set_base_vals(self, f_nom): 
         self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
@@ -210,111 +331,3 @@ class GridDataClass:
         for Q_new, idx in zip(Q_vals_mw, indices): 
             # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
             self._grid_loads.at[idx, "q_nom_mvar"] = Q_new
-
-
-
-class GridModel: 
-    def __init__(self, grid_data: GridDataClass): 
-        self.md = grid_data 
-        self.y_bus = self.md.get_Y_bus() 
-        self.P_mask, self.Q_mask = self.md.get_PQ_mask() 
-        self.V_mask, self.delta_mask, _ = self.md.get_V_delta_mask() 
-
-    def _do_pf(self, V_vals, delta_vals, y_bus): 
-        # Convert to a vector of complex voltages 
-        V_vec = V_vals*np.cos(delta_vals) + V_vals*np.sin(delta_vals)*1j
-        # V_mat = np.eye(len(V_vec))*V_vec  
-        S_conj = V_vec.conj() * (y_bus @ V_vec)
-        P_calc = S_conj.real 
-        Q_calc = -S_conj.imag 
-        return P_calc, Q_calc
-
-    def _setup_pf(self) -> Callable[[np.ndarray], np.ndarray]:
-        """ 
-        Creates and returns the correct functions for doing a power flow calculation. 
-        
-        Attributes 
-        -----------
-        """ 
-        V_vals, delta_vals = self.md.get_V_delta_vals()
-        P_vals, Q_vals = self.md.get_PQ_vals() 
-
-        def pf_eqs(X): 
-            _delta_vals = delta_vals.copy()
-            _V_vals = V_vals.copy() 
-            
-            _delta_vals[self.delta_mask] = X[:self.md.N_delta] # Convention that X = [delta, V]
-            _V_vals[self.V_mask] = X[self.md.N_delta:]
-
-            P_calc, Q_calc = self._do_pf(_V_vals, _delta_vals, self.y_bus)
-
-            P_root = (P_calc - P_vals)[self.P_mask]
-            Q_root = (Q_calc - Q_vals)[self.Q_mask]
-
-            S_root = np.zeros(len(X)) # Do this initialization to be numba compatible 
-            S_root[:len(P_root)] = P_root 
-            S_root[len(P_root):] = Q_root
-            return S_root 
-        
-        return pf_eqs 
-    
-    def _calc_pf(self) -> PowerFlowResult: 
-        X0 = np.zeros(len(self.delta_mask) + len(self.V_mask))
-        X0[self.md.N_delta:] = 1.0 # flat voltage start
-        pf_eqs = self._setup_pf() 
-        sol = root(pf_eqs, X0, tol=1e-8)
-        return sol 
-    
-    def _get_pf_sol(self, sol: OptimizeResult): 
-        V_vals, delta_vals = self.md.get_V_delta_vals()
-        delta_vals[self.delta_mask] = sol.x[:self.md.N_delta]
-        V_vals[self.V_mask] = sol.x[self.md.N_delta:]
-        P_calc, Q_calc = self._do_pf(V_vals, delta_vals, self.y_bus) 
-        return PowerFlowResult(P_calc, Q_calc, V_vals, delta_vals, self.md.S_base_mva)
-    
-    def powerflow(self) -> PowerFlowResult: 
-        """ 
-        Does a power flow calculation based on the values specified in excel. 
-        
-        Returns 
-        ---------
-        PowerFlowResult 
-        """
-        sol = self._calc_pf()
-        if not sol.success: 
-            print(sol)
-        sol = self._get_pf_sol(sol) 
-        return sol 
-                
-
-class ORPDHandler: 
-    def __init__(self, grid_model: GridModel, gen_control_idx: Sequence[int], 
-                 V_min: Optional[ArrayLike]=0.95, 
-                 V_max: Optional[ArrayLike]=1.05): 
-        self.grid_model = grid_model 
-        self.gen_control_idx = gen_control_idx
-        self.ORPD_func = self.get_ORPD_func()
-        self.V_min = V_min
-        self.V_max = V_max 
-        self.cons = LinearConstraint(np.eye(len(self.gen_control_idx)), lb=self.V_min, ub=self.V_max)
-
-    def get_ORPD_func(self): 
-
-        def ORPD(V_vals): 
-            self.grid_model.md.change_V_gen(self.gen_control_idx, V_vals)
-            sol = self.grid_model.powerflow()
-            return sol.get_P_losses()
-        return ORPD 
-    
-    def solve_ORPD(self) -> OptimizeResult: 
-        sol = minimize(self.ORPD_func, x0=np.ones(len(self.gen_control_idx)), constraints=self.cons)
-        return sol 
-    
-    def get_problem_dict(self, log_to="console") -> dict:
-        problem_dict = {
-        "fit_func": self.get_ORPD_func(),
-        "lb": [0.9, ] * len(self.gen_control_idx),
-        "ub": [1.1, ] * len(self.gen_control_idx),
-        "minmax": "min",
-        "log_to": log_to}
-        return problem_dict
