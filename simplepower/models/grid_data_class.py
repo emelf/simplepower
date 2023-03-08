@@ -1,10 +1,10 @@
 from typing import Optional, Sequence, Tuple
 import pandas as pd 
 import numpy as np 
-from branch_model import LineDataClass, TrafoDataClass
 from enum import Enum
 
-from import_grid_model import get_item_dict
+from models.branch_model import LineDataClass, TrafoDataClass
+from models.import_grid_model import get_item_dict
 
 """
 Two methods of import is supported at the moment: 
@@ -16,7 +16,7 @@ Both methods should end up with five pandas dataframes: _grid_buses, _grid_lines
 _grid_buses: [bus_idx	name	v_nom_kv]
 _grid_lines: [name	v_nom_kv	length_km	r_ohm_per_km	x_ohm_per_km	c_uf_per_km	from_bus_idx	to_bus_idx	is_pu]
 _grid_trafos: [name	S_nom	V_hv_kV	V_lv_kV	V_SCH_pu	P_Cu_pu	I_E_pu	P_Fe_pu	idx_hv	idx_lv	tap_pos	tap_change	tap_min	tap_max]
-_grid_loads: [name	v_base_kV	s_base_mva	v_nom_pu	p_nom_mw	q_nom_mvar	bus_idx	g_shunt_pu	b_shunt_pu]
+_grid_loads: [name	v_nom_kv	s_base_mva	v_nom_pu	p_nom_mw	q_nom_mvar	bus_idx	g_shunt_pu	b_shunt_pu]
 _grid_gens: [name	S_rated_mva	v_set_pu	p_set_mw	bus_idx	is_slack]
 """
 
@@ -45,8 +45,9 @@ class ExcelImport:
     
 
 class IEEEImport: 
-    def __init__(self, filename): 
+    def __init__(self, filename, f_nom: Optional[float]=50.0): 
         self.filename = filename 
+        self.f_nom = f_nom
         self._read_IEEE(filename)
 
     def _read_IEEE(self, filename): 
@@ -61,12 +62,19 @@ class IEEEImport:
 
     def _get_line_data(self): 
         line_data = {}
-        line_idx = np.where((self.branch_data["tap_ratio_final"] == 0.0))[0]
+        line_idx = []
+        for i, (V1_idx, V2_idx) in enumerate(zip(self.branch_data["tap_bus"], self.branch_data["Z_bus"])):
+            V1 = self.bus_data["base_kV"][V1_idx-1]
+            V2 = self.bus_data["base_kV"][V2_idx-1]
+            if V1 == V2: 
+                line_idx.append(i)
+        line_idx = np.array(line_idx, dtype=int)
+        # line_idx = np.where((self.branch_data["tap_ratio_final"] == 0.0))[0]
         line_data["name"] = np.array([f"Line {i}" for i in range(len(line_idx))])
         line_data["length_km"] = 1.0 
         line_data["r_ohm_per_km"] = self.branch_data["r_pu"][line_idx]
         line_data["x_ohm_per_km"] = self.branch_data["x_pu"][line_idx]
-        line_data["c_uf_per_km"] = 2*np.pi*self.branch_data["b_pu"][line_idx]
+        line_data["c_uf_per_km"] = self.branch_data["b_pu"][line_idx]/(2*np.pi*self.f_nom)
         line_data["from_bus_idx"] = self.branch_data["tap_bus"][line_idx]-1
         line_data["to_bus_idx"] = self.branch_data["Z_bus"][line_idx]-1
         line_data["is_pu"] = [1 for _ in range(len(line_idx))] 
@@ -75,7 +83,24 @@ class IEEEImport:
     
     def _get_trafo_data(self): 
         trafo_data = {}
-        trafo_idx = np.where((self.branch_data["tap_ratio_final"] > 0.0))[0]
+        trafo_idx = []
+        hv_bus_idx = [] 
+        lv_bus_idx = []
+        v_base_vals = []
+        for i, (V1_idx, V2_idx) in enumerate(zip(self.branch_data["tap_bus"], self.branch_data["Z_bus"])):
+            V1 = self.bus_data["base_kV"][V1_idx-1]
+            V2 = self.bus_data["base_kV"][V2_idx-1]
+            if V1 != V2: 
+                v_base_vals.append(V2)
+                trafo_idx.append(i)
+                if V1 > V2: 
+                    hv_bus_idx.append(self.branch_data["tap_bus"][i])
+                    lv_bus_idx.append(self.branch_data["Z_bus"][i])
+                else: 
+                    lv_bus_idx.append(self.branch_data["tap_bus"][i])
+                    hv_bus_idx.append(self.branch_data["Z_bus"][i])
+        trafo_idx = np.array(trafo_idx, dtype=int) 
+        # trafo_idx = np.where((self.branch_data["tap_ratio_final"] > 0.0))[0]
         trafo_data["name"] = np.array([f"Trafo {i}" for i in range(len(trafo_idx))])
         trafo_data["S_nom"] = np.array([self.S_base for _ in range(len(trafo_idx))])
         trafo_r = self.branch_data["r_pu"][trafo_idx]
@@ -84,21 +109,30 @@ class IEEEImport:
         trafo_data["P_Cu_pu"] = trafo_r
         trafo_data["I_E_pu"] = np.zeros(len(trafo_idx))
         trafo_data["P_Fe_pu"] = np.zeros(len(trafo_idx))
-        trafo_data["idx_hv"] = self.branch_data["tap_bus"][trafo_idx]-1
-        trafo_data["idx_lv"] = self.branch_data["Z_bus"][trafo_idx]-1
+        # trafo_data["idx_hv"] = self.branch_data["tap_bus"][trafo_idx]-1
+        # trafo_data["idx_lv"] = self.branch_data["Z_bus"][trafo_idx]-1
+        trafo_data["idx_hv"] = np.array(hv_bus_idx, dtype=int) - 1
+        trafo_data["idx_lv"] = np.array(lv_bus_idx, dtype=int) - 1
         trafo_data["tap_pos"] = np.ones(len(trafo_idx))
-        trafo_data["tap_change"] = 1 - self.branch_data["tap_ratio_final"][trafo_idx]
+        tap_change = [] 
+        for tap in self.branch_data["tap_ratio_final"][trafo_idx]: 
+            if tap == 0.0: 
+                tap_change.append(0.0)
+            else: 
+                tap_change.append(tap-1)
+        trafo_data["tap_change"] = np.array(tap_change)
         trafo_data["tap_min"] = self.branch_data["tap_min"][trafo_idx]
         trafo_data["tap_max"] = self.branch_data["tap_max"][trafo_idx]
         trafo_data["V_hv_kV"] = self.bus_data["base_kV"][trafo_data["idx_hv"]]
         trafo_data["V_lv_kV"] = self.bus_data["base_kV"][trafo_data["idx_lv"]]
+        trafo_data["v_base_kV"] = np.array(v_base_vals)
         return trafo_data
     
     def _get_load_data(self): 
         load_data = {}
         load_idx = np.where(np.logical_or(self.bus_data["load_mw"] > 0.0, self.bus_data["load_mvar"] > 0.0))[0]
         load_data["name"] = np.array([f"Load bus {idx}" for idx in load_idx])
-        load_data["v_base_kV"] = self.bus_data["base_kV"][load_idx]
+        load_data["v_nom_kv"] = self.bus_data["base_kV"][load_idx]
         load_data["s_base_mva"] = np.ones(len(load_idx))*self.S_base
         load_data["v_nom_pu"] = np.ones(len(load_idx))
         load_data["p_nom_mw"] = self.bus_data["load_mw"][load_idx]
@@ -110,14 +144,20 @@ class IEEEImport:
     
     def _get_gen_data(self): 
         gen_data = {}
-        gen_idx = np.where(self.bus_data["gen_mw"] > 0.0)[0]
-        gen_data["name"] = np.array([f"Gen {idx}" for idx in gen_idx])
+        generator_idx = np.where(self.bus_data["gen_mw"] > 0.0)[0]
+        svc_mask = np.logical_and(self.bus_data["gen_mvar"] != 0.0, self.bus_data["gen_mw"] == 0.0) 
+        svc_idx = np.where(svc_mask)[0]
+        gen_idx = np.concatenate([generator_idx, svc_idx])
+        gen_names = np.array([f"Gen {idx}" for idx in generator_idx])
+        svc_names = np.array([f"SVC {idx}" for idx in svc_idx])
+
+        gen_data["name"] = np.concatenate([gen_names, svc_names])
         gen_data["S_rated_mva"] = np.ones(len(gen_idx))*self.S_base
-        gen_data["v_set_pu"] = self.bus_data["final_v"][gen_idx]
+        gen_data["v_set_pu"] = self.bus_data["v_desire"][gen_idx]
         gen_data["p_set_mw"] = self.bus_data["gen_mw"][gen_idx]
         gen_data["bus_idx"] = gen_idx 
         gen_type = self.bus_data["type"][gen_idx]
-        gen_data["is_slack"] = np.array(np.equal(gen_type, 3), dtype=int)
+        gen_data["is_slack"] = np.array(np.equal(gen_type, 3), dtype=int)  
         return gen_data 
 
     def get_data(self): 
@@ -137,9 +177,11 @@ class IEEEImport:
 
 
 class GridDataClass: 
-    def __init__(self, filename: str, filetype: FileType, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None):         
+    def __init__(self, filename: str, filetype: FileType, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
+                 S_base_mva: Optional[float]=None):       
+        self.filetype = filetype  
         self._read_data(filename, filetype)
-        self._set_base_vals(f_nom)
+        self._set_base_vals(f_nom, S_base_mva)
         self._set_init_condition(V_init, delta_init)
         self._set_line_data()
         self._set_trafo_data()
@@ -155,8 +197,10 @@ class GridDataClass:
 
         (self._grid_buses, self._grid_lines, self._grid_trafos, self._grid_loads, self._grid_gens) = data.get_data()
 
-    def _set_base_vals(self, f_nom): 
-        self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
+    def _set_base_vals(self, f_nom, S_base_mva):
+        if S_base_mva is None: 
+            self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
+        else: self.S_base_mva = S_base_mva 
         self.V_base_kV = self._grid_buses["v_nom_kv"].max()
         self.f_nom = f_nom
         self.N_buses = self._grid_buses.shape[0] 
@@ -192,9 +236,17 @@ class GridDataClass:
     def _set_trafo_data(self): 
         self._trafo_data = [] 
         for _, row in self._grid_trafos.iterrows(): 
-            trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], V_SCH=row["V_SCH_pu"], 
+            match self.filetype: 
+                case FileType.IEEE: 
+                    z_hv = 1e-6 
+                    z_lv = 1.0 - 1e-6  
+                case FileType.Excel: 
+                    z_hv = 0.5 
+                    z_lv = 0.5
+            trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], V_base_kV=row["v_base_kV"], V_SCH=row["V_SCH_pu"],
                                         P_Cu=row["P_Cu_pu"], I_E=row["I_E_pu"], P_Fe=row["P_Fe_pu"], idx_hv=row["idx_hv"], idx_lv=row["idx_lv"], 
-                                        is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], tap_min=row["tap_min"], tap_max=row["tap_max"]
+                                        is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], tap_min=row["tap_min"], tap_max=row["tap_max"], 
+                                        z_leak_hv=z_hv, z_leak_lv=z_lv
                                         )
             trafo_data = trafo_data.change_base(self.S_base_mva, self.V_base_kV)
             self._trafo_data.append(trafo_data)
@@ -202,7 +254,7 @@ class GridDataClass:
     def _set_shunt_data(self): 
         self._shunt_data = []
         for _, row in self._grid_loads.iterrows(): 
-            factor = (row["v_base_kV"]**2/row["s_base_mva"]) * (self.S_base_mva/(self.V_base_kV**2))
+            factor = (self.S_base_mva / row["s_base_mva"]) #* (row["v_nom_kv"] / self.V_base_kV)**2
             g_shunt = row["g_shunt_pu"]
             b_shunt = row["b_shunt_pu"]
 
@@ -237,54 +289,31 @@ class GridDataClass:
         """Returns Y_bus"""
         return self._y_bus
     
-    def get_PQ_mask(self) -> Tuple[Sequence[float], Sequence[float]]:
+    def get_PQVd_mask(self) -> Tuple[Sequence[int], Sequence[int], Sequence[int], Sequence[int]]:
         """
-        Returns (P_mask, Q_mask) \n 
-        Used for obtaining the correct powers during calculation. size(P_mask) = (N_PQ+N_PV, ), size(Q_mask) = (N_PQ, )"""
-        # P_mask = np.zeros(self.N_buses, dtype=int)
-        # Q_mask = np.zeros(self.N_buses, dtype=int) 
-        P_mask = [] 
-        Q_mask = []
+        Returns (P_mask, Q_mask, V_mask, d_mask) \n 
+        Used for obtaining the correct powers during calculation. size(P_mask) = (N_PQ+N_PV-1), size(Q_mask) = (N_PQ, ), assuming one slack bus.
+        P_mask, Q_mask -> Bus idx where P or Q is known \n 
+        V_mask, d_mask -> Bus idx where V or delta is unknown. """
+        P_mask = np.arange(0, self.N_buses, 1)
+        Q_mask = np.arange(0, self.N_buses, 1)
+        V_mask = np.arange(0, self.N_buses, 1)
+        delta_mask = np.arange(0, self.N_buses, 1)
+
         gen_bus_idx = []
-
+        gen_bus_idx_sl = []
         for _, row in self._grid_gens.iterrows(): 
+            gen_bus_idx_sl.append(row["bus_idx"])
             if row["is_slack"] == 0:
-                # P_mask[row["bus_idx"]] = 1
-                P_mask.append(row["bus_idx"])
                 gen_bus_idx.append(row["bus_idx"])
+            else: 
+                P_mask = np.delete(P_mask, row["bus_idx"])
+                delta_mask = np.delete(delta_mask, row["bus_idx"])
 
-        for _, row in self._grid_loads.iterrows(): 
-            P_mask.append(row["bus_idx"])
-            if not row["bus_idx"] in gen_bus_idx:
-                Q_mask.append(row["bus_idx"])
-        
-        return np.unique(P_mask).astype(int), np.unique(Q_mask).astype(int)
-
-    def get_V_delta_mask(self) -> Tuple[Sequence[float], Sequence[float], float]: 
-        """
-        Returns (V_mask, delta_mask, N_delta) \n
-        Used for determening the variables in which to solve for when doing power flow. \n
-        Size of each mask = (N_buses, ) """
-        # V_mask = np.zeros(self.N_buses, dtype=int)
-        # delta_mask = np.zeros(self.N_buses, dtype=int) 
-        V_mask = [] 
-        delta_mask = []
-        self.N_delta = 0
-        self._gen_bus_idx = []
-
-        for _, row in self._grid_gens.iterrows(): 
-            if row["is_slack"] == 0:
-                self.N_delta += 1 
-                delta_mask.append(row["bus_idx"])
-                self._gen_bus_idx.append(row["bus_idx"])
-
-        for _, row in self._grid_loads.iterrows(): 
-            if not row["bus_idx"] in self._gen_bus_idx:
-                V_mask.append(row["bus_idx"])
-                delta_mask.append(row["bus_idx"])
-                self.N_delta += 1
-
-        return np.unique(V_mask).astype(int), np.unique(delta_mask).astype(int), self.N_delta
+        Q_mask = np.delete(Q_mask, gen_bus_idx_sl)
+        V_mask = np.delete(V_mask, gen_bus_idx_sl)
+        self.N_delta = len(delta_mask)
+        return P_mask, Q_mask, V_mask, delta_mask
 
     def get_V_delta_vals(self) -> Tuple[Sequence[float], Sequence[float]]:
         """

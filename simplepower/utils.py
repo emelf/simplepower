@@ -1,12 +1,14 @@
 import numpy as np
+import pandas as pd
 
 class PowerFlowResult: 
-    def __init__(self, P_calc, Q_calc, V_buses, d_buses, S_base): 
+    def __init__(self, P_calc, Q_calc, V_buses, d_buses, S_base, scipy_sol): 
         self.P_calc = P_calc * S_base
         self.Q_calc = Q_calc * S_base
         self.V_buses = V_buses 
         self.d_buses = d_buses
         self.S_base = S_base
+        self.scipy_sol = scipy_sol
 
     def __repr__(self): 
         str1 = f"P_calc = {np.round(self.P_calc, 4)} MW \n" 
@@ -18,3 +20,7 @@ class PowerFlowResult:
     def get_P_losses(self): 
         """Returns P_loss_MW"""
         return np.sum(self.P_calc)
+    
+    def get_sol_df(self): 
+        sol = {"P_inj MW": self.P_calc, "Q_inj_Mvar": self.Q_calc, "V_bus_pu": self.V_buses, "delta_bus_deg": self.d_buses*180/np.pi}
+        return pd.DataFrame(sol)

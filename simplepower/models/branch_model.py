@@ -52,6 +52,9 @@ class BranchDataClass:
     def convert_to_pu(self): 
         return BranchDataClass(self.S_base_mva, self.V_base_kV, self.r_l/self.Z_base, self.x_l/self.Z_base, self.idx_1, self.idx_2, 
                                self.g_1/self.Y_base, self.b_1/self.Y_base, self.g_2/self.Y_base, self.b_2/self.Y_base, is_pu=True)
+    def convert_to_pu(self): 
+        return BranchDataClass(self.S_base_mva, self.V_base_kV, self.r_l/self.Z_base, self.x_l/self.Z_base, self.idx_1, self.idx_2, 
+                               self.g_1/self.Y_base, self.b_1/self.Y_base, self.g_2/self.Y_base, self.b_2/self.Y_base, is_pu=True)
 
     def convert_from_pu(self): 
         return BranchDataClass(self.S_base_mva, self.V_base_kV, self.r_l*self.Z_base, self.x_l*self.Z_base, self.idx_1, self.idx_2, 
@@ -59,7 +62,7 @@ class BranchDataClass:
     
     def change_base(self, S_new_mva: float, V_new_kV: float): 
         """Changes all pu bases from S_base_mva, V_base_kV to a new set of S_new_mva, V_new_kV. NOTE: Assumes class already in pu."""
-        bs_hv = (S_new_mva/self.S_base_mva) #*(self.V_base_kV/V_new_kV)**2
+        bs_hv = (S_new_mva/self.S_base_mva) #* (self.V_base_kV/V_new_kV)**2
         return BranchDataClass(S_new_mva, V_new_kV, self.r_l*bs_hv, self.x_l*bs_hv, self.idx_1, self.idx_2,
                                self.g_1/bs_hv, self.b_1/bs_hv, 
                                self.g_2/bs_hv, self.b_2/bs_hv, is_pu=True)
@@ -67,7 +70,7 @@ class BranchDataClass:
 
 class TrafoDataClass(BranchDataClass):
     """Assume the Kundur transformer model. """ 
-    def __init__(self, S_base_mva: float, V_n_hv: float, V_n_lv: float, V_SCH: float, P_Cu: float, I_E: float, P_Fe: float, idx_hv: int, idx_lv: int, 
+    def __init__(self, S_base_mva: float, V_n_hv: float, V_n_lv: float, V_base_kV: float, V_SCH: float, P_Cu: float, I_E: float, P_Fe: float, idx_hv: int, idx_lv: int, 
                  tap_change: Optional[float] = 0.01, tap_min: Optional[int] = -7, tap_max: Optional[int] = 7, tap_pos: Optional[int] = 0,
                  z_leak_hv: Optional[float] = 0.5, z_leak_lv: Optional[float] = 0.5, is_pu: Optional[bool] = True): 
         """
@@ -104,6 +107,7 @@ class TrafoDataClass(BranchDataClass):
         self.z_leak_lv = z_leak_lv
         self.V_n_hv = V_n_hv 
         self.V_n_lv = V_n_lv
+        self.V_base_kV = V_base_kV
 
         self.Z_T = V_SCH 
         self.R_T = P_Cu
@@ -137,12 +141,13 @@ class TrafoDataClass(BranchDataClass):
         Y_lv = Y_23 #+ Y_m/2 * self.b1**2
         Z_12 = Y_12**-1
 
-        super().__init__(S_base_mva, self.V_n_hv, Z_12.real, Z_12.imag, idx_hv, idx_lv, Y_hv.real, Y_hv.imag, 
+        super().__init__(S_base_mva, self.V_base_kV, Z_12.real, Z_12.imag, idx_hv, idx_lv, Y_hv.real, Y_hv.imag, 
                          Y_lv.real, Y_lv.imag, is_pu=is_pu)
         
     def change_base(self, S_new_mva: float, V_new_kV: float): 
         """Changes all pu bases from S_base_mva, V_base_kV to a new set of S_new_mva, V_new_kV. NOTE: Assumes class already in pu."""
-        bs_hv = (S_new_mva/self.S_base_mva) #*(self.V_n_hv/V_new_kV)**2
+        # bs_hv = (S_new_mva/self.S_base_mva) * (self.V_base_kV/V_new_kV)**2
+        bs_hv = (S_new_mva/self.S_base_mva) #* (self.V_base_kV/V_new_kV)**2
         return BranchDataClass(S_new_mva, V_new_kV, self.r_l*bs_hv, self.x_l*bs_hv, self.idx_1, self.idx_2,
                                self.g_1/bs_hv, self.b_1/bs_hv, 
                                self.g_2/bs_hv, self.b_2/bs_hv, is_pu=True)

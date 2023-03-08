@@ -9,19 +9,20 @@ currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfram
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-from simplepower.models.grid_model import GridDataClass, GridModel
+from simplepower.models import GridModel
+from simplepower.models import GridDataClass, FileType
 
-grid_data_1 = GridDataClass("tests/test_grid_1.xlsx", f_nom=50)
+grid_data_1 = GridDataClass("tests/test_grid_1.xlsx", filetype=FileType.Excel, f_nom=50)
 grid_model_1 = GridModel(grid_data_1) 
 
-grid_data_2 = GridDataClass("tests/test_grid_2.xlsx", f_nom=50)
+grid_data_2 = GridDataClass("tests/test_grid_2.xlsx", filetype=FileType.Excel, f_nom=50)
 grid_model_2 = GridModel(grid_data_2) 
 
-grid_data_3 = GridDataClass("tests/test_grid_3.xlsx", f_nom=50)
+grid_data_3 = GridDataClass("tests/test_grid_3.xlsx", filetype=FileType.Excel, f_nom=50)
 grid_model_3 = GridModel(grid_data_3) 
 
-# grid_data_4 = GridDataClass("tests/test_grid_4.xlsx", f_nom=50)
-# grid_model_4 = GridModel(grid_data_2) 
+grid_data_4 = GridDataClass("tests/test_grid_4.xlsx", filetype=FileType.Excel, f_nom=50)
+grid_model_4 = GridModel(grid_data_4) 
 
 class TestDataClass(unittest.TestCase): 
     def test_data_class_model_1(self): 

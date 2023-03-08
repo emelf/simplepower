@@ -2,7 +2,7 @@ import numpy as np
 
 bus_locs = {"bus_num": (1, 5), "name": (5, 19), "area": (19, 21), "loss_zone": (21, 24), "type": (25, 27), 
             "final_v": (27, 33), "final_delta": (34, 41), "load_mw": (41, 50), "load_mvar": (50, 60), "gen_mw": (60, 68), "gen_mvar": (68, 75), 
-            "base_kV": (77, 84), "v_desire": (85, 91), "q_max": (91, 99), "q_min": (99, 106), "shunt_g_pu": (107, 115), "shunt_b_pu": (115, 123), 
+            "base_kV": (77, 84), "v_desire": (84, 91), "q_max": (91, 99), "q_min": (99, 106), "shunt_g_pu": (107, 115), "shunt_b_pu": (115, 123), 
             "remote_bus": (124, 128)}
 bus_types = {"bus_num": int, "name": str, "area": int, "loss_zone": int, "type": int, 
             "final_v": float, "final_delta": float, "load_mw": float, "load_mvar": float, "gen_mw": float, "gen_mvar": float, 
