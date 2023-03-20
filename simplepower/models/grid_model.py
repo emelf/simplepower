@@ -20,6 +20,7 @@ class GridModel:
     def __init__(self, grid_data: GridDataClass): 
         self.md = grid_data 
         self.y_bus = self.md.get_Y_bus() 
+        self.y_lines = self.md.get_Y_lines() 
         # self.P_mask, self.Q_mask = self.md.get_PQ_mask() 
         # self.V_mask, self.delta_mask, _ = self.md.get_V_delta_mask() 
         self.P_mask, self.Q_mask, self.V_mask, self.delta_mask = self.md.get_PQVd_mask() 
@@ -89,6 +90,17 @@ class GridModel:
             print(sol)
         sol = self._get_pf_sol(sol) 
         return sol 
+    
+    def _get_I_mat(self, V_vals, d_vals):         
+        V_vec = V_vals*np.cos(d_vals) + V_vals*np.sin(d_vals)*1j
+        V_mat = np.zeros((len(V_vec), len(V_vec)), dtype=np.complex64) * V_vec 
+        for idx, V in enumerate(V_vec):
+            V_mat[idx] = - V_vec
+            V_mat[idx] += V
+            V_mat[idx, idx] += V   
+
+        I_mat = V_mat * self.y_lines
+        return I_mat
                 
 
 class ORPDHandler: 
@@ -122,3 +134,6 @@ class ORPDHandler:
         "minmax": "min",
         "log_to": log_to}
         return problem_dict
+    
+    def set_opt_v(self, sol: OptimizeResult): 
+        self.grid_model.md.change_V_gen(self.gen_control_idx, sol.x)

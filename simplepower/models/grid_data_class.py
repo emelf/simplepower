@@ -187,6 +187,7 @@ class GridDataClass:
         self._set_trafo_data()
         self._set_shunt_data()
         self._y_bus = self._create_y_bus()
+        self._y_lines = self._create_y_lines()
 
     def _read_data(self, filename, filetype): 
         match filetype: 
@@ -204,6 +205,7 @@ class GridDataClass:
         self.V_base_kV = self._grid_buses["v_nom_kv"].max()
         self.f_nom = f_nom
         self.N_buses = self._grid_buses.shape[0] 
+        self.I_bases_kA = self.S_base_mva / (self._grid_buses["v_nom_kv"].values * np.sqrt(3))
 
     def _set_init_condition(self, V_init, delta_init): 
         if V_init is None: 
@@ -284,10 +286,33 @@ class GridDataClass:
             y_bus[idx, idx] -= self._shunt_data[i]
 
         return y_bus
+    
+    def _create_y_lines(self): 
+        y_lines = np.zeros((self.N_buses, self.N_buses), dtype=np.complex64)
+        for line_data in self._line_data: 
+            y_lines[line_data.idx_1, line_data.idx_2] += line_data.y_series
+            y_lines[line_data.idx_2, line_data.idx_1] += line_data.y_series
+            y_lines[line_data.idx_1, line_data.idx_1] += line_data.y_1_shunt
+            y_lines[line_data.idx_2, line_data.idx_2] += line_data.y_2_shunt
+
+        for trafo_data in self._trafo_data: 
+            y_lines[trafo_data.idx_1, trafo_data.idx_2] += trafo_data.y_series
+            y_lines[trafo_data.idx_2, trafo_data.idx_1] += trafo_data.y_series
+            y_lines[trafo_data.idx_1, trafo_data.idx_1] += trafo_data.y_1_shunt
+            y_lines[trafo_data.idx_2, trafo_data.idx_2] += trafo_data.y_2_shunt
+
+        for i, row in self._grid_loads.iterrows(): 
+            idx = row["bus_idx"]
+            y_lines[idx, idx] += self._shunt_data[i]
+
+        return y_lines
 
     def get_Y_bus(self) -> Sequence[float]: 
         """Returns Y_bus"""
         return self._y_bus
+    
+    def get_Y_lines(self) -> Sequence[float]: 
+        return self._y_lines
     
     def get_PQVd_mask(self) -> Tuple[Sequence[int], Sequence[int], Sequence[int], Sequence[int]]:
         """
