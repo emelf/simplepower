@@ -116,7 +116,7 @@ class TrafoDataClass(BranchDataClass):
         self.Y_hv = 1/(self.Z_T*self.z_leak_hv) 
         self.Y_lv = 1/(self.Z_T*self.z_leak_lv * self.a2**2) 
 
-        self.G_Fe = P_Fe #* self.Z_base_hv
+        self.G_Fe = P_Fe 
         self.B_mu = sqrt(I_E**2 - self.G_Fe**2)
         self.Y_M = self.G_Fe - 1j*self.B_mu
         self.Y_M = self.Y_M if abs(self.Y_M) > 1e-12 else -1j*1e-12

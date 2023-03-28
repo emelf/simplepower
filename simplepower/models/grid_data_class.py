@@ -79,6 +79,10 @@ class IEEEImport:
         line_data["to_bus_idx"] = self.branch_data["Z_bus"][line_idx]-1
         line_data["is_pu"] = [1 for _ in range(len(line_idx))] 
         line_data["v_nom_kv"] = self.bus_data["base_kV"][line_data["from_bus_idx"]]
+        line_mva = []
+        for l1, l2, l3 in zip(self.branch_data["line_MVA_1"], self.branch_data["line_MVA_2"], self.branch_data["line_MVA_3"]): 
+            line_mva.append(np.max([l1, l2, l3]))
+        line_data["I_lim_A"] = [1000 if l < 1e-6 else l*1000/(v*np.sqrt(3)) for l, v in zip(line_mva, line_data["v_nom_kv"])]
         return line_data 
     
     def _get_trafo_data(self): 
@@ -126,6 +130,10 @@ class IEEEImport:
         trafo_data["V_hv_kV"] = self.bus_data["base_kV"][trafo_data["idx_hv"]]
         trafo_data["V_lv_kV"] = self.bus_data["base_kV"][trafo_data["idx_lv"]]
         trafo_data["v_base_kV"] = np.array(v_base_vals)
+        trafo_data["I_lim_A"] = []
+        for S, V in zip(trafo_data["S_nom"], trafo_data["v_base_kV"]): 
+            trafo_data["I_lim_A"].append(S*1000/(np.sqrt(3)*V))
+        trafo_data["I_lim_A"] = np.array(trafo_data["I_lim_A"])
         return trafo_data
     
     def _get_load_data(self): 
@@ -182,6 +190,17 @@ class GridDataClass:
         self.filetype = filetype  
         self._read_data(filename, filetype)
         self._set_base_vals(f_nom, S_base_mva)
+        self._set_lim_vals()
+        self._set_init_condition(V_init, delta_init)
+        self._set_line_data()
+        self._set_trafo_data()
+        self._set_shunt_data()
+        self._y_bus = self._create_y_bus()
+        self._y_lines = self._create_y_lines()
+
+    def _re_init(self, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, S_base_mva: Optional[float]=None): 
+        self._set_base_vals(f_nom, S_base_mva)
+        self._set_lim_vals()
         self._set_init_condition(V_init, delta_init)
         self._set_line_data()
         self._set_trafo_data()
@@ -206,6 +225,25 @@ class GridDataClass:
         self.f_nom = f_nom
         self.N_buses = self._grid_buses.shape[0] 
         self.I_bases_kA = self.S_base_mva / (self._grid_buses["v_nom_kv"].values * np.sqrt(3))
+
+    def _set_lim_vals(self): 
+        self.I_lims_pu = np.zeros((self.N_buses, self.N_buses))
+        for idx, line in self._grid_lines.iterrows(): 
+            I_lim = line["I_lim_A"]
+            i = line["from_bus_idx"]
+            j = line["to_bus_idx"]
+            I_base = self.S_base_mva*1000/(np.sqrt(3)*self.V_base_kV)
+            self.I_lims_pu[i, j] = self.I_lims_pu[j, i] = I_lim/I_base 
+
+        for idx, trafo in self._grid_trafos.iterrows(): 
+            s_nom = trafo["S_nom"]
+            i = trafo["idx_hv"]
+            j = trafo["idx_lv"]
+            self.I_lims_pu[i, j] = self.I_lims_pu[j, i] = s_nom/self.S_base_mva
+
+        self.columns = [f"From {i}" for i in range(self.N_buses)]
+        self.indices = [f"To {i}" for i in range(self.N_buses)]
+        self.I_lims_pu = pd.DataFrame(np.abs(self.I_lims_pu), columns=self.columns, index=self.indices)
 
     def _set_init_condition(self, V_init, delta_init): 
         if V_init is None: 
@@ -301,9 +339,9 @@ class GridDataClass:
             y_lines[trafo_data.idx_1, trafo_data.idx_1] += trafo_data.y_1_shunt
             y_lines[trafo_data.idx_2, trafo_data.idx_2] += trafo_data.y_2_shunt
 
-        for i, row in self._grid_loads.iterrows(): 
-            idx = row["bus_idx"]
-            y_lines[idx, idx] += self._shunt_data[i]
+        # for i, row in self._grid_loads.iterrows(): 
+        #     idx = row["bus_idx"]
+        #     y_lines[idx, idx] += self._shunt_data[i]
 
         return y_lines
 
