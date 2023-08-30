@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np 
 from enum import Enum
 
-from models.branch_model import LineDataClass, TrafoDataClass
+from BranchModels import LineDataClass, TrafoDataClass
 from models.import_grid_model import get_item_dict
 
 """
@@ -23,6 +23,8 @@ _grid_gens: [name	S_rated_mva	v_set_pu	p_set_mw	bus_idx	is_slack]
 class FileType(Enum): 
     Excel = 0, 
     IEEE = 1, 
+    JSON = 2
+
 
 class ExcelImport: 
     def __init__(self, filename): 
@@ -42,6 +44,10 @@ class ExcelImport:
                 self._grid_trafos,
                 self._grid_loads,
                 self._grid_gens)
+    
+
+class JSONImport: # TODO
+    pass 
     
 
 class IEEEImport: 

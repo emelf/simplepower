@@ -8,7 +8,7 @@ currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfram
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-from simplepower.models.branch_model import BranchDataClass, BranchModel
+from simplepower.models.PowerFlowModels.branch_model import BranchDataClass, BranchModel
 
 
 class TestDataClass(unittest.TestCase): 

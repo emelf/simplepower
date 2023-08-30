@@ -24,3 +24,7 @@ class PowerFlowResult:
     def get_sol_df(self): 
         sol = {"P_inj MW": self.P_calc, "Q_inj_Mvar": self.Q_calc, "V_bus_pu": self.V_buses, "delta_bus_deg": self.d_buses*180/np.pi}
         return pd.DataFrame(sol)
+    
+    def store_PF_results(self, filename: str): # TODO
+        """TODO: Stores the power flow results into a json file at specified location. """
+        pass 
