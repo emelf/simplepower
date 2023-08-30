@@ -1,2 +1,2 @@
-from BranchModels import TrafoDataClass, LineDataClass
-from GridDataClass import GridDataClass
+from simplepower.Dataclasses.BranchModels import TrafoDataClass, LineDataClass
+from simplepower.Dataclasses.GridDataClass import GridDataClass

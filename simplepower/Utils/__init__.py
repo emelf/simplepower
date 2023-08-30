@@ -1,1 +1,1 @@
-from utils import PowerFlowResult 
+from simplepower.Utils.utils import PowerFlowResult 
