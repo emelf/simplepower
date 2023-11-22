@@ -1,1 +1,1 @@
-from simplepower.PowerFlowModels.GridModel import GridModel 
+from .GridModel import GridModel 

@@ -91,7 +91,7 @@ class TrafoDataClass(BranchDataClass):
         self.tap_min = tap_min 
         self.tap_max = tap_max 
         self.tap_pos = tap_pos
-        self.phase_shift = 0
+        self.phase_shift = 0 # TODO: Input for this?
 
         self.a1 = 1+tap_change*tap_pos # Tap ratio
         self.a2 = np.exp(self.phase_shift*1j) # Phase shift
