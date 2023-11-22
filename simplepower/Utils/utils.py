@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-
+from ..Dataclasses.GridDataClass import GridDataClass
+from copy import deepcopy
 
 class PowerFlowResult: 
     def __init__(self, P_calc, Q_calc, V_buses, d_buses, S_base, scipy_sol): 
@@ -29,3 +30,26 @@ class PowerFlowResult:
     def store_json(self, filename: str): #
         """Stores the power flow results into a json file at specified location. """
         self.get_sol_df().to_json(filename) 
+
+def convert_PV_to_PQ_grid(grid_data: GridDataClass, pf_res: PowerFlowResult): 
+    grid_data_PQ = deepcopy(grid_data) 
+    # Adding a load for each generator after the power flow*
+    N_loads = len(grid_data_PQ._grid_loads)
+    idx = 0
+    for _, gen in grid_data_PQ._grid_gens.iterrows(): 
+        if gen["is_slack"] != 1:
+            new_data = {"name": gen["name"], "v_nom_kv": grid_data.V_base_kV, 
+                        "s_base_mva": gen["S_rated_mva"], "v_nom_pu": 1.0, 
+                        "p_nom_mw": pf_res.P_calc[gen["bus_idx"]], 
+                        "q_nom_mvar": pf_res.Q_calc[gen["bus_idx"]], 
+                        "bus_idx": gen["bus_idx"], "g_shunt_pu": 0.0, 
+                        "b_shunt_pu": 0.0}
+            grid_data_PQ._grid_loads.loc[N_loads+idx] = pd.Series(new_data) 
+            idx += 1 
+            
+    # Code for removing all generators except the slack 
+    idx_slack = np.argmax(grid_data_PQ._grid_gens["is_slack"] == 1)
+    N_gens = len(grid_data_PQ._grid_gens)
+    gen_idx = [i for i in range(N_gens) if i != idx_slack]
+    grid_data_PQ._grid_gens.drop(index=gen_idx, inplace=True)
+    return grid_data_PQ
