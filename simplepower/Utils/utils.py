@@ -40,8 +40,8 @@ def convert_PV_to_PQ_grid(grid_data: GridDataClass, pf_res: PowerFlowResult):
         if gen["is_slack"] != 1:
             new_data = {"name": gen["name"], "v_nom_kv": grid_data.V_base_kV, 
                         "s_base_mva": gen["S_rated_mva"], "v_nom_pu": 1.0, 
-                        "p_nom_mw": pf_res.P_calc[gen["bus_idx"]], 
-                        "q_nom_mvar": pf_res.Q_calc[gen["bus_idx"]], 
+                        "p_nom_mw": -pf_res.P_calc[gen["bus_idx"]], 
+                        "q_nom_mvar": -pf_res.Q_calc[gen["bus_idx"]], 
                         "bus_idx": gen["bus_idx"], "g_shunt_pu": 0.0, 
                         "b_shunt_pu": 0.0}
             grid_data_PQ._grid_loads.loc[N_loads+idx] = pd.Series(new_data) 
