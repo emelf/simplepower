@@ -36,13 +36,15 @@ class ExcelImport:
         self._grid_trafos  = pd.read_excel(filename, sheet_name="trafos")
         self._grid_loads = pd.read_excel(filename, sheet_name="loads")
         self._grid_gens  = pd.read_excel(filename, sheet_name="gens")
+        self._grid_static_gens = pd.read_excel(filename, sheet_name="static gens")
 
     def get_data(self): 
         return (self._grid_buses, 
                 self._grid_lines, 
                 self._grid_trafos,
                 self._grid_loads,
-                self._grid_gens)
+                self._grid_gens, 
+                self._grid_static_gens)
     
 
 class JSONImport: # TODO
@@ -50,9 +52,9 @@ class JSONImport: # TODO
     
 class GridDataClass: 
     def __init__(self, filename: str, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
-                 S_base_mva: Optional[float]=None):       
+                 S_base_mva: Optional[float]=None, V_base_kV: Optional[float]=None):       
         self._read_data(filename)
-        self._set_base_vals(f_nom, S_base_mva)
+        self._set_base_vals(f_nom, S_base_mva, V_base_kV)
         self._set_lim_vals()
         self._set_init_condition(V_init, delta_init)
         self._set_line_data()
@@ -73,13 +75,16 @@ class GridDataClass:
 
     def _read_data(self, filename): 
         data = ExcelImport(filename)
-        (self._grid_buses, self._grid_lines, self._grid_trafos, self._grid_loads, self._grid_gens) = data.get_data()
+        (self._grid_buses, self._grid_lines, self._grid_trafos, self._grid_loads, self._grid_gens, self._grid_static_gens) = data.get_data()
 
-    def _set_base_vals(self, f_nom, S_base_mva):
+    def _set_base_vals(self, f_nom, S_base_mva, V_base_kV):
         if S_base_mva is None: 
             self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
         else: self.S_base_mva = S_base_mva 
-        self.V_base_kV = self._grid_buses["v_nom_kv"].max()
+        if V_base_kV is None:
+            self.V_base_kV = self._grid_buses["v_nom_kv"].max()
+        else: 
+            self.V_base_kV = V_base_kV
         self.f_nom = f_nom
         self.N_buses = self._grid_buses.shape[0] 
         self.I_bases_kA = self.S_base_mva / (self._grid_buses["v_nom_kv"].values * np.sqrt(3))
@@ -209,8 +214,8 @@ class GridDataClass:
         """
         Returns (P_mask, Q_mask, V_mask, d_mask) \n 
         Used for obtaining the correct powers during calculation. size(P_mask) = (N_PQ+N_PV-1), size(Q_mask) = (N_PQ, ), assuming one slack bus.
-        P_mask, Q_mask -> Bus idx where P or Q is known \n 
-        V_mask, d_mask -> Bus idx where V or delta is unknown. """
+        P_mask, Q_mask -> Bus idx where P / Q is known \n 
+        V_mask, d_mask -> Bus idx where V / delta is unknown. """
         P_mask = np.arange(0, self.N_buses, 1)
         Q_mask = np.arange(0, self.N_buses, 1)
         V_mask = np.arange(0, self.N_buses, 1)
@@ -222,7 +227,7 @@ class GridDataClass:
             gen_bus_idx_sl.append(row["bus_idx"])
             if row["is_slack"] == 0:
                 gen_bus_idx.append(row["bus_idx"])
-            else: 
+            else: # In case slack bus
                 P_mask = np.delete(P_mask, row["bus_idx"])
                 delta_mask = np.delete(delta_mask, row["bus_idx"])
 
@@ -253,6 +258,10 @@ class GridDataClass:
             P_vals[row["bus_idx"]] -= row["p_nom_mw"]/self.S_base_mva
             Q_vals[row["bus_idx"]] -= row["q_nom_mvar"]/self.S_base_mva
 
+        for _, row in self._grid_static_gens.iterrows(): 
+            P_vals[row["bus_idx"]] += row["p_set_mw"]/self.S_base_mva
+            Q_vals[row["bus_idx"]] += row["q_set_mvar"]/self.S_base_mva
+
         return P_vals, Q_vals 
     
     def change_P_gen(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
@@ -276,3 +285,15 @@ class GridDataClass:
         for Q_new, idx in zip(Q_vals_mw, indices): 
             # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
             self._grid_loads.at[idx, "q_nom_mvar"] = Q_new
+
+    def change_P_static_gen(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
+        """Note: The indices are the load indices in order from the Excel sheet. """ 
+        for P_new, idx in zip(P_vals_mw, indices): 
+            # self._grid_loads.loc[idx, "p_nom_mw"] = P_new
+            self._grid_static_gens.at[idx, "p_set_mw"] = P_new
+
+    def change_Q_static_gen(self, indices: Sequence[int], Q_vals_mw: Sequence[float]): 
+        """Note: The indices are the load indices in order from the Excel sheet. """ 
+        for Q_new, idx in zip(Q_vals_mw, indices): 
+            # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
+            self._grid_static_gens.at[idx, "q_set_mvar"] = Q_new

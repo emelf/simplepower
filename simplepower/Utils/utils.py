@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from ..Dataclasses.GridDataClass import GridDataClass
+from ..PowerFlowModels import GridModel
 from copy import deepcopy
 
 class PowerFlowResult: 
@@ -31,8 +32,10 @@ class PowerFlowResult:
         """Stores the power flow results into a json file at specified location. """
         self.get_sol_df().to_json(filename) 
 
-def convert_PV_to_PQ_grid(grid_data: GridDataClass, pf_res: PowerFlowResult): 
+def convert_PV_to_PQ_grid(grid_data: GridDataClass): 
     grid_data_PQ = deepcopy(grid_data) 
+    grid_model = GridModel(grid_data_PQ)
+    pf_res = grid_model.powerflow()
     # Adding a load for each generator after the power flow*
     N_loads = len(grid_data_PQ._grid_loads)
     idx = 0
