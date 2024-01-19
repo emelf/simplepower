@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd 
 from scipy.optimize import root
 
-from simplepower.Utils import PowerFlowResult
-from simplepower.Dataclasses import GridDataClass
+from ..Dataclasses import PowerFlowResult
+from ..Dataclasses import GridDataClass
 
 class GridModel: 
     def __init__(self, grid_data: GridDataClass): 
