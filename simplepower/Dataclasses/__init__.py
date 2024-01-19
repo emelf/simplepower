@@ -1,3 +1,2 @@
-# from simplepower.Dataclasses.GridDataClass import GridDataClass
-from .GridDataClass import GridDataClass 
-from .ResultClasses import PowerFlowResult
+from .grid_model import GridDataClass 
+from .branch_model import TrafoDataClass, LineDataClass, BranchDataClass

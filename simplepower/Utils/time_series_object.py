@@ -1,6 +1,6 @@
 import pandas as pd 
 import numpy as np 
-from typing import Sequence, Union
+from typing import Union
 
 class PQTimeSeries: 
     def __init__(self, p_vals_mw: Union[float, np.ndarray], 

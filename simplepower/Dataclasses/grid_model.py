@@ -3,14 +3,12 @@ import pandas as pd
 import numpy as np 
 from enum import Enum
 
-from .BranchModels import LineDataClass, TrafoDataClass
+from .branch_model import LineDataClass, TrafoDataClass
 
 """
-Two methods of import is supported at the moment: 
-1) Manual excel sheet insertion + import excel file through pandas
-2) IEEE Common Data Format and .txt file. 
+Import network data through reading an excel file. 
 
-Both methods should end up with five pandas dataframes: _grid_buses, _grid_lines, _grid_trafos, _grid_loads, _grid_gens
+The import should create six pandas dataframes in the grid dataclass: _grid_buses, _grid_lines, _grid_trafos, _grid_loads, _grid_gens, _grid_static_gens
 
 _grid_buses: [bus_idx	name	v_nom_kv]
 _grid_lines: [name	v_nom_kv	length_km	r_ohm_per_km	x_ohm_per_km	c_uf_per_km	from_bus_idx	to_bus_idx	is_pu]
@@ -23,7 +21,6 @@ class FileType(Enum): # NOTE: Being deprecated
     Excel = 0, 
     IEEE = 1, 
     JSON = 2
-
 
 class ExcelImport: 
     def __init__(self, filename): 
@@ -79,7 +76,7 @@ class GridDataClass:
 
     def _set_base_vals(self, f_nom, S_base_mva, V_base_kV):
         if S_base_mva is None: 
-            self.S_base_mva = self._grid_gens["S_rated_mva"].sum()
+            self.S_base_mva = self._grid_gens["S_rated_mva"].sum() + self._grid_static_gens["S_rated_mva"]
         else: self.S_base_mva = S_base_mva 
         if V_base_kV is None:
             self.V_base_kV = self._grid_buses["v_nom_kv"].max()
