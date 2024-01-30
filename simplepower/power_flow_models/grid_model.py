@@ -6,7 +6,7 @@ import pandas as pd
 from scipy.optimize import root
 
 from ..utils import PowerFlowResult, PQVD
-from ..dataclasses import GridDataClass
+from ..data_classes import GridDataClass
 from .base_models import BaseComponentModel
 
 class GridModel: 
@@ -72,9 +72,9 @@ class GridModel:
         P_calc, Q_calc = self._do_pf(V_vals, delta_vals, self.y_bus) 
         return PowerFlowResult(P_calc, Q_calc, V_vals, delta_vals, self.md.S_base_mva, sol)
     
-    def powerflow(self, ts: int, method="hybr") -> PowerFlowResult: 
+    def powerflow(self, ts: Optional[Sequence[int]]=None, method="hybr") -> PowerFlowResult: 
         """ 
-        Does a power flow calculation based on the values specified in excel. 
+        If ts (time step) is None, performs powerflow calculation on all available data. 
         
         Returns 
         ---------
@@ -113,8 +113,8 @@ class GridModel:
         P_add = np.zeros(self.md.N_buses, dtype=float)
         Q_add = np.zeros(self.md.N_buses, dtype=float)
         for model in self.PQ_models:
-            P_inj = model.P_inj_equation(pf_vals, ts) / self.md.S_base_mva
-            Q_inj = model.Q_inj_equation(pf_vals, ts) / self.md.S_base_mva
+            P_inj = model.dP_inj_equation(pf_vals, ts) / self.md.S_base_mva
+            Q_inj = model.dQ_inj_equation(pf_vals, ts) / self.md.S_base_mva
             P_add[model.bus_idx] += P_inj 
             Q_add[model.bus_idx] += Q_inj 
         return P_add, Q_add 

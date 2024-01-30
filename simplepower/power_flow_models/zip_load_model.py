@@ -29,25 +29,18 @@ class ZIPLoadModel(BaseComponentModel):
         self.b_q = b_q 
         self.c_q = c_q 
         self.V0 = V0_pu 
-
-    def calc_PQ(self, pf_res: PowerFlowResult, time_step: int): 
-        V = pf_res.V_buses[self.bus_idx]
-        P0, Q0 = self.ts.iloc(time_step) 
-        P = P0*(self.a_p*(V/self.V0)**2 + self.b_p*V/self.V0 + self.c_p) 
-        Q = Q0*(self.a_q*(V/self.V0)**2 + self.b_q*V/self.V0 + self.c_q)
-        return (P, Q) 
     
-    def P_inj_equation(self, pqvd_vals: PQVD, ts: int):
+    def dP_inj_equation(self, pqvd_vals: PQVD, ts: int):
         V = pqvd_vals.V_bus[self.bus_idx]
         P0, Q0 = self.ts.iloc(ts) 
-        P = P0*(self.a_p*(V/self.V0)**2 + self.b_p*V/self.V0 + self.c_p) 
-        return P 
+        dP = P0*(self.a_p*(V/self.V0)**2 + self.b_p*V/self.V0 + self.c_p)
+        return dP 
     
-    def Q_inj_equation(self, pqvd_vals: PQVD, ts: int):
+    def dQ_inj_equation(self, pqvd_vals: PQVD, ts: int):
         V = pqvd_vals.V_bus[self.bus_idx]
         P0, Q0 = self.ts.iloc(ts) 
-        Q = Q0*(self.a_q*(V/self.V0)**2 + self.b_q*V/self.V0 + self.c_q)
-        return Q
+        dQ = Q0*(self.a_q*(V/self.V0)**2 + self.b_q*V/self.V0 + self.c_q)
+        return dQ
         
 
 if __name__=="__main__": 
@@ -63,5 +56,4 @@ if __name__=="__main__":
                           a_q=0.0, b_q=1.0, c_q=0.0, 
                           V0_pu=1.0)
     
-    print(load_1.calc_PQ(pf_res, 0))
 

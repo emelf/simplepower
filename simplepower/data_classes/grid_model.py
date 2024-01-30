@@ -60,8 +60,9 @@ class GridDataClass:
         self._y_bus = self._create_y_bus()
         self._y_lines = self._create_y_lines()
 
-    def _re_init(self, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, S_base_mva: Optional[float]=None): 
-        self._set_base_vals(f_nom, S_base_mva)
+    def _re_init(self, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
+                 S_base_mva: Optional[float]=None, V_base_kV: Optional[float]=None): 
+        self._set_base_vals(f_nom, S_base_mva, V_base_kV)
         self._set_lim_vals()
         self._set_init_condition(V_init, delta_init)
         self._set_line_data()
@@ -294,3 +295,27 @@ class GridDataClass:
         for Q_new, idx in zip(Q_vals_mw, indices): 
             # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
             self._grid_static_gens.at[idx, "q_set_mvar"] = Q_new
+
+    def change_lines(self, line_idx: Sequence[int], 
+                    r_new: Optional[Sequence[float]]=None,
+                    x_new: Optional[Sequence[float]]=None,
+                    length_new: Optional[Sequence[float]]=None, 
+                    c_new: Optional[Sequence[float]]=None, 
+                    is_pu_new: Optional[Sequence[bool]]=None): 
+        if not r_new is None: 
+            for idx, r in zip(line_idx, r_new):
+                self._grid_lines.at[idx, "r_ohm_per_km"] = r 
+        if not x_new is None: 
+            for idx, x in zip(line_idx, x_new):
+                self._grid_lines.at[idx, "x_ohm_per_km"] = x 
+        if not length_new is None: 
+            for idx, length in zip(line_idx, length_new):
+                self._grid_lines.at[idx, "length_km"] = length 
+        if not c_new is None: 
+            for idx, c in zip(line_idx, c_new):
+                self._grid_lines.at[idx, "c_uf_per_km"] = c 
+        if not is_pu_new is None: 
+            for idx, is_pu in zip(line_idx, is_pu_new):
+                self._grid_lines.at[idx, "is_pu"] = is_pu 
+        
+        self._re_init(f_nom=self.f_nom, S_base_mva=self.S_base_mva)
