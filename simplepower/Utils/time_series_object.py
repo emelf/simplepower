@@ -1,41 +1,35 @@
 import pandas as pd 
 import numpy as np 
 from typing import Union
+from abc import ABC
 
-class PQTimeSeries: 
+class BaseTimeSeries(ABC): 
+    def __init__(self, 
+                 ts1: Union[float, np.ndarray, list, tuple], 
+                 ts2: Union[float, np.ndarray, list, tuple]):
+        """Contains two datasets, either PQ data or PV data. """ 
+        self._ts1_arr = isinstance(ts1, (np.ndarray, list, tuple))
+        self._ts2_arr = isinstance(ts2, (np.ndarray, list, tuple))
+
+        self.ts1 = ts1
+        self.ts2 = ts2
+    
+    def iloc(self, idx) -> (float, float): 
+        ts1 = self.ts1[idx] if self._ts1_arr else self.ts1 
+        ts2 = self.ts2[idx] if self._ts2_arr else self.ts2 
+        return (ts1, ts2)
+
+
+class PQTimeSeries(BaseTimeSeries): 
     def __init__(self, p_vals_mw: Union[float, np.ndarray], 
                  q_vals_mvar: Union[float, np.ndarray]): 
-        if type(p_vals_mw) is float and type(q_vals_mvar) is float:   
-            self.p_vals_mw = p_vals_mw 
-            self.q_vals_mvar = q_vals_mvar
-            self._len = -1 
-
-        # Forces both p and q to be of same length if one value is float  
-        elif type(p_vals_mw) is float: 
-            self._len = len(q_vals_mvar)
-            self.p_vals_mw = np.array([p_vals_mw for _ in range(self._len)])
-            self.q_vals_mvar = q_vals_mvar
-
-        elif type(q_vals_mvar) is float: 
-            self._len = len(p_vals_mw)
-            self.p_vals_mw = p_vals_mw
-            self.q_vals_mvar = np.array([q_vals_mvar for _ in range(self._len)])
-
-        else: 
-            self.p_vals_mw = p_vals_mw
-            self.q_vals_mvar = q_vals_mvar
-            self._len = len(self.p_vals_mw)
-
-        self._index = 0 
-
-    def len(self):
-        return self._len 
+        super().__init__(p_vals_mw, q_vals_mvar)
     
-    def iloc(self, idx): 
-        if idx < self.len():
-            return (self.p_vals_mw[idx], self.q_vals_mvar[idx])
-        else: 
-            return (None, None)
+
+class PVTimeSeries(BaseTimeSeries): 
+    def __init__(self, p_vals_mw: Union[float, np.ndarray], 
+                 v_vals_pu: Union[float, np.ndarray]): 
+        super().__init__(p_vals_mw, v_vals_pu)
     
 
 if __name__ == "__main__": 

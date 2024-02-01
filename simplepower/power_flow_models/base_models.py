@@ -1,60 +1,48 @@
-import numpy as np 
-import pandas as pd 
-from abc import ABC, abstractmethod 
-from ..utils import PQTimeSeries, PQVD
+from typing import Optional, Sequence
+from abc import ABC 
+from enum import Enum
+from ..utils import PQVD, BaseTimeSeries
 
 
-class BaseComponentModel(ABC): 
-    def __init__(self, bus_idx, *args, **kwargs): 
-        self.bus_idx = bus_idx  
+class BusType(Enum): 
+    PV = 0 
+    PQ = 1 
 
-    @abstractmethod
-    def dP_inj_equation(self, pqvd_vals: PQVD, ts: int): 
-        """Explenation: This method is the term that is on the right hand side of 
-        the following equation: 
-        P_calc_i = P_known_i -> Uses this relation to find the root P_calc_i - P_known_i = 0. 
-        P_known_i is usually constant for static generators. However, we can introduce dynamic behavior 
-        by allowing the "known" value to be dependend on the solution itself. This is e.g., voltage droop control. """
-        return pqvd_vals.iloc[self.bus_idx][0] # Default: return the same value 
+    @staticmethod
+    def get_type(bus_str: str) -> 'BusType': 
+        if bus_str.upper() == "PQ":
+            return BusType.PQ
+        else:
+            return BusType.PV
+        
 
-    @abstractmethod
-    def dQ_inj_equation(self, pqvd_vals: PQVD, ts: int): 
-        return pqvd_vals.iloc[self.bus_idx][1] # Default: return the same value 
+class BaseComponentModel(ABC):
+    def __init__(self, bus_idx: int, bus_type: BusType, data: BaseTimeSeries): 
+        self._bus_idx = bus_idx  
+        self._bus_type = bus_type
+        self._data = data
+
+    @property
+    def bus_idx(self): 
+        return self._bus_idx
+
+    @property
+    def bus_type(self): 
+        return self._bus_type
     
-class BaseGenerator(BaseComponentModel): 
-    def __init__(self, ts: PQTimeSeries, bus_idx: int): 
-        """
-        Base generator class 
-        --- 
-        Used for adding the power reference to a generator with controls 
-        """
-        super().__init__(bus_idx)
-        self.ts = ts 
+    @property
+    def data(self): 
+        return self._data
+
+    def P_add_equation(self, pqvd: Optional[PQVD]=None, 
+                       time_idx: Optional[int]=None) -> float: 
+        return 0.0 
+
+    def Q_add_equation(self, pqvd: Optional[PQVD]=None, 
+                       time_idx: Optional[int]=None) -> float: 
+        return 0.0 
     
-    def dP_inj_equation(self, pqvd_vals: PQVD, ts: int):
-        P0, Q0 = self.ts.iloc(ts) 
-        return P0
+    def V_add_equation(self, pqvd: Optional[PQVD]=None, 
+                       time_idx: Optional[int]=None) -> float: 
+        return 0.0 
     
-    def dQ_inj_equation(self, pqvd_vals: PQVD, ts: int):
-        P0, Q0 = self.ts.iloc(ts) 
-        return Q0
-    
-    
-class BaseLoad(BaseComponentModel): 
-    def __init__(self, ts: PQTimeSeries, bus_idx: int): 
-        """
-        Base load class 
-        --- 
-        Used for adding the power reference to a load with controls
-        """
-        super().__init__(bus_idx)
-        self.ts = ts 
-    
-    def dP_inj_equation(self, pqvd_vals: PQVD, ts: int):
-        P0, Q0 = self.ts.iloc(ts) 
-        return P0
-    
-    def dQ_inj_equation(self, pqvd_vals: PQVD, ts: int):
-        P0, Q0 = self.ts.iloc(ts) 
-        return Q0
- 

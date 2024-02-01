@@ -3,14 +3,19 @@ import pandas as pd
 
 class PQVD: 
     """ A simple way to store all bus P_inj, Q_inj, V_bus, d_bus values. """
-    def __init__(self, P_bus, Q_bus, V_bus, d_bus): 
+    def __init__(self, P_bus, Q_bus, V_bus, d_bus, S_base=1.0, V_base=1.0): 
         self.P_bus = P_bus 
         self.Q_bus = Q_bus 
         self.V_bus = V_bus 
         self.d_bus = d_bus 
+        self.S_base = S_base 
+        self.V_base = V_base
 
-    def iloc(self, idx): 
+    def iloc_pu(self, idx): 
         return (self.P_bus[idx], self.Q_bus[idx], self.V_bus[idx], self.d_bus[idx])
+
+    def iloc_mva(self, idx): 
+        return (self.P_bus[idx]*self.S_base, self.Q_bus[idx]*self.S_base, self.V_bus[idx], self.d_bus[idx])
 
 class PowerFlowResult: 
     def __init__(self, P_calc, Q_calc, V_buses, d_buses, S_base, scipy_sol): 
