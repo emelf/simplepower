@@ -66,7 +66,7 @@ class TrafoDataClass(BranchDataClass):
     """Assume the Kundur transformer model. """ 
     def __init__(self, S_base_mva: float, V_n_hv: float, V_n_lv: float, V_base_kV: float, V_SCH: float, P_Cu: float, I_E: float, P_Fe: float, idx_hv: int, idx_lv: int, 
                  tap_change: Optional[float] = 0.01, tap_min: Optional[int] = -7, tap_max: Optional[int] = 7, tap_pos: Optional[int] = 0,
-                 z_leak_hv: Optional[float] = 0.5, z_leak_lv: Optional[float] = 0.5, is_pu: Optional[bool] = True): 
+                 z_leak_hv: Optional[float] = 0.5, is_pu: Optional[bool] = True): 
         """
         Dataclass for transformer modelAll values is specified in pu 
 
@@ -84,8 +84,7 @@ class TrafoDataClass(BranchDataClass):
         tap_change: pu change of the voltage ratio per tap 
         tap_min: minimum tap position 
         tap_max: maximum tap position
-        r_leak_hv: How much leakage resistance there is at the hv side. The rest (1-r_leak_hv) is at the lv side. 
-        x_leak_hv: How much leakage reactance there is at the hv side. The rest (1-r_leak_hv) is at the lv side. 
+        z_leak_hv: How much leakage impedance there is at the hv side. The rest (1-r_leak_hv) is at the lv side. 
         """
         self.tap_change = tap_change
         self.tap_min = tap_min 
@@ -98,7 +97,7 @@ class TrafoDataClass(BranchDataClass):
         self.b1 = self.a1**-1 
 
         self.z_leak_hv = z_leak_hv 
-        self.z_leak_lv = z_leak_lv
+        self.z_leak_lv = (1.0 - z_leak_hv)
         self.V_n_hv = V_n_hv 
         self.V_n_lv = V_n_lv
         self.V_base_kV = V_base_kV
