@@ -2,7 +2,7 @@ import numpy as np
 from typing import Generator, Optional
 from enum import Enum
 
-from .base_models import BaseComponentModel, BusType
+from .base_models import BaseComponentModel
 from ..utils import BaseTimeSeries
 
 class RandomPQVariable(BaseComponentModel): 
@@ -19,8 +19,7 @@ class RandomPQVariable(BaseComponentModel):
         Q_gen: Same as the x_generator 
         """
         data = BaseTimeSeries(0.0, 0.0)
-        bus_type = BusType.PQ
-        super().__init__(bus_idx, bus_type, data)
+        super().__init__(bus_idx, data)
         self.P_gen = P_gen 
         self.Q_gen = Q_gen 
 

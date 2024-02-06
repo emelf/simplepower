@@ -4,26 +4,22 @@ import numpy as np
 from enum import Enum
 
 from .branch_model import LineDataClass, TrafoDataClass
-
-"""
-Import network data through reading an excel file. 
-
-The import should create six pandas dataframes in the grid dataclass: _grid_buses, _grid_lines, _grid_trafos, _grid_loads, _grid_gens, _grid_static_gens
-
-_grid_buses: [bus_idx	name	v_nom_kv]
-_grid_lines: [name	v_nom_kv	length_km	r_ohm_per_km	x_ohm_per_km	c_uf_per_km	from_bus_idx	to_bus_idx	is_pu]
-_grid_trafos: [name	S_nom	V_hv_kV	V_lv_kV	V_SCH_pu	P_Cu_pu	I_E_pu	P_Fe_pu	idx_hv	idx_lv	tap_pos	tap_change	tap_min	tap_max]
-_grid_loads: [name	v_nom_kv	s_base_mva	v_nom_pu	p_nom_mw	q_nom_mvar	bus_idx	g_shunt_pu	b_shunt_pu]
-_grid_gens: [name	S_rated_mva	v_set_pu	p_set_mw	bus_idx	is_slack]
-"""
-
-class FileType(Enum): # NOTE: Being deprecated
-    Excel = 0, 
-    IEEE = 1, 
-    JSON = 2
+from ..component_models import BasePQGenerator, BasePVGenerator, BasePQLoad, BaseComponentModel
+from ..utils import BaseTimeSeries, PQVD
 
 class ExcelImport: 
     def __init__(self, filename): 
+        """
+        Import network data through reading an excel file. 
+
+        The import should create six pandas dataframes in the grid dataclass: _grid_buses, _grid_lines, _grid_trafos, _grid_loads, _grid_gens, _grid_static_gens
+
+        _grid_buses: [bus_idx	name	v_nom_kv]
+        _grid_lines: [name	v_nom_kv	length_km	r_ohm_per_km	x_ohm_per_km	c_uf_per_km	from_bus_idx	to_bus_idx	is_pu]
+        _grid_trafos: [name	S_nom	V_hv_kV	V_lv_kV	V_SCH_pu	P_Cu_pu	I_E_pu	P_Fe_pu	idx_hv	idx_lv	tap_pos	tap_change	tap_min	tap_max]
+        _grid_loads: [name	v_nom_kv	s_base_mva	v_nom_pu	p_nom_mw	q_nom_mvar	bus_idx	g_shunt_pu	b_shunt_pu]
+        _grid_gens: [name	S_rated_mva	v_set_pu	p_set_mw	bus_idx	is_slack]
+        """
         self.filename = filename
         self._real_excel(filename) 
     
@@ -42,13 +38,11 @@ class ExcelImport:
                 self._grid_loads,
                 self._grid_gens, 
                 self._grid_static_gens)
-    
 
-class JSONImport: # TODO
-    pass 
     
 class GridDataClass: 
-    def __init__(self, filename: str, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
+    def __init__(self, filename: str, f_nom: float, models: list[BaseComponentModel]=[],
+                 V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
                  S_base_mva: Optional[float]=None, V_base_kV: Optional[float]=None):       
         self._read_data(filename)
         self._set_base_vals(f_nom, S_base_mva, V_base_kV)
@@ -59,6 +53,7 @@ class GridDataClass:
         self._set_shunt_data()
         self._y_bus = self._create_y_bus()
         self._y_lines = self._create_y_lines()
+        self._define_PQV_models(models)
 
     def _re_init(self, f_nom: float, V_init: Optional[Sequence[float]]=None, delta_init: Optional[Sequence[float]]=None, 
                  S_base_mva: Optional[float]=None, V_base_kV: Optional[float]=None): 
@@ -77,7 +72,7 @@ class GridDataClass:
 
     def _set_base_vals(self, f_nom, S_base_mva, V_base_kV):
         if S_base_mva is None: 
-            self.S_base_mva = self._grid_gens["S_rated_mva"].sum() + self._grid_static_gens["S_rated_mva"]
+            self.S_base_mva = self._grid_gens["S_rated_mva"].sum() + self._grid_static_gens["S_rated_mva"].sum()
         else: self.S_base_mva = S_base_mva 
         if V_base_kV is None:
             self.V_base_kV = self._grid_buses["v_nom_kv"].max()
@@ -138,12 +133,10 @@ class GridDataClass:
         self._trafo_data = [] 
         for _, row in self._grid_trafos.iterrows(): 
             z_hv = 0.5 
-            z_lv = 0.5
             trafo_data = TrafoDataClass(S_base_mva=row["S_nom"], V_n_hv=row["V_hv_kV"], V_n_lv=row["V_lv_kV"], V_base_kV=row["v_base_kV"], V_SCH=row["V_SCH_pu"],
                                         P_Cu=row["P_Cu_pu"], I_E=row["I_E_pu"], P_Fe=row["P_Fe_pu"], idx_hv=row["idx_hv"], idx_lv=row["idx_lv"], 
                                         is_pu=True, tap_pos=row["tap_pos"], tap_change=row["tap_change"], tap_min=row["tap_min"], tap_max=row["tap_max"], 
-                                        z_leak_hv=z_hv, z_leak_lv=z_lv
-                                        )
+                                        z_leak_hv=z_hv)
             trafo_data = trafo_data.change_base(self.S_base_mva, self.V_base_kV)
             self._trafo_data.append(trafo_data)
 
@@ -200,6 +193,36 @@ class GridDataClass:
         #     y_lines[idx, idx] += self._shunt_data[i]
 
         return y_lines
+    
+    def _define_PQV_models(self, other_models: list[BaseComponentModel]): 
+        models = []
+        for idx, gen in self._grid_gens.iterrows(): 
+            gen_profile = BaseTimeSeries(gen["p_set_mw"], gen["v_set_pu"])
+            model = BasePVGenerator(gen["bus_idx"], gen_profile)
+            models.append(model) 
+
+        for idx, gen in self._grid_static_gens.iterrows(): 
+            gen_profile = BaseTimeSeries(gen["p_set_mw"], gen["q_set_mvar"])
+            model = BasePQGenerator(gen["bus_idx"], gen_profile)
+            models.append(model) 
+
+        for idx, load in self._grid_loads.iterrows(): 
+            load_profile = BaseTimeSeries(load["p_nom_mw"], load["q_nom_mvar"])
+            model = BasePQLoad(load["bus_idx"], load_profile)
+            models.append(model) 
+
+        self.base_models = self._get_model_dict(models)
+        self.added_models = self._get_model_dict(other_models)
+
+    def _get_model_dict(self, models: list[BaseComponentModel]):
+        levels = []
+        for model in models: 
+            levels.append(model.level)
+        levels = np.unique(levels) 
+        model_dict = {level: [] for level in levels} 
+        for model in models: 
+            model_dict[model.level].append(model)
+        return model_dict
 
     def get_Y_bus(self) -> Sequence[float]: 
         """Returns Y_bus"""
@@ -234,67 +257,76 @@ class GridDataClass:
         self.N_delta = len(delta_mask)
         return P_mask, Q_mask, V_mask, delta_mask
 
-    def get_V_delta_vals(self) -> Tuple[Sequence[float], Sequence[float]]:
-        """
-        Returns two vectors of size (N_buses) which contains the known values for V and delta. If unknown, initialize to 1.0 for voltage, and 0.0 for delta. """
-        delta_vals = self.delta_init.copy()
+    def _get_V_delta_vals(self, time_index: Optional[int]=0) -> Tuple[Sequence[float], Sequence[float]]:
         V_vals = self.V_init.copy()
-        for _, row in self._grid_gens.iterrows(): 
-            V_vals[row["bus_idx"]] = row["v_set_pu"]
+        V_vals = np.zeros(self.N_buses, dtype=float)
+        delta_vals = self.delta_init.copy()
+        for level, models in self.base_models.items():
+            for model in models:
+                V_vals[model.bus_idx] += model.V_add_equation(None, time_index) # TODO: Dont need pqvd in the v_add equations
+        for level, models in self.added_models.items(): 
+            for model in models: 
+                V_vals[model.bus_idx] += model.V_add_equation(None, time_index)
         return V_vals, delta_vals
 
-    def get_PQ_vals(self) -> Tuple[Sequence[float], Sequence[float]]: 
-        """
-        Returns two vectors of size (N_buses) which contains the known values for P and Q. If unknown, initialize to 0.0 for both. """
+    def _get_PQ_vals(self, pqvd: PQVD, time_index: Optional[int]=0) -> Tuple[Sequence[float], Sequence[float]]: 
         P_vals = np.zeros(self.N_buses) 
         Q_vals = np.zeros(self.N_buses) 
-        for _, row in self._grid_gens.iterrows(): 
-            if row["is_slack"] == 0:
-                P_vals[row["bus_idx"]] += row["p_set_mw"]/self.S_base_mva
-
-        for _, row in self._grid_loads.iterrows(): 
-            P_vals[row["bus_idx"]] -= row["p_nom_mw"]/self.S_base_mva
-            Q_vals[row["bus_idx"]] -= row["q_nom_mvar"]/self.S_base_mva
-
-        for _, row in self._grid_static_gens.iterrows(): 
-            P_vals[row["bus_idx"]] += row["p_set_mw"]/self.S_base_mva
-            Q_vals[row["bus_idx"]] += row["q_set_mvar"]/self.S_base_mva
-
+        for level, models in self.base_models.items():
+            for model in models: 
+                P_vals[model.bus_idx] += model.P_add_equation(pqvd, time_index)/self.S_base_mva
+                Q_vals[model.bus_idx] += model.Q_add_equation(pqvd, time_index)/self.S_base_mva
+                
+        for level, models in self.added_models.items():
+            for model in models: 
+                P_vals[model.bus_idx] += model.P_add_equation(pqvd, time_index)/self.S_base_mva
+                Q_vals[model.bus_idx] += model.Q_add_equation(pqvd, time_index)/self.S_base_mva
         return P_vals, Q_vals 
     
-    def change_P_gen(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
-        """Note: The indices are the generator indices in order from the Excel sheet. """ 
-        for P_new, idx in zip(P_vals_mw, indices): 
-            self._grid_gens.at[idx, "p_set_mw"] = P_new
+    def change_model_data(self, bus_idx: int, model_type: BaseComponentModel, 
+                          new_data: BaseTimeSeries): 
+        for level, models in self.base_models.items(): 
+            for model in models: 
+                if model.bus_idx == bus_idx: 
+                    if isinstance(model, model_type): 
+                        model.replace_data(new_data)
+        for level, models in self.added_models.items(): 
+            for model in models: 
+                if model.bus_idx == bus_idx: 
+                    if isinstance(model, model_type): 
+                        model.replace_data(new_data)
 
-    def change_V_gen(self, indices: Sequence[int], V_vals: Sequence[float]):
-        """Note: The indices are the generator indices in order from the Excel sheet. """ 
-        for V_new, idx in zip(V_vals, indices): 
-            self._grid_gens.at[idx, "v_set_pu"] = V_new           
+    def replace_model(self, old_model_type: BaseComponentModel, 
+                      new_model: BaseComponentModel): 
+        for level, models in self.base_models.items(): 
+            for i, model in enumerate(models): 
+                if model.bus_idx == new_model.bus_idx: 
+                    if isinstance(model, old_model_type): 
+                        models.remove(models[i])
+                        self.add_model(new_model)
+        for level, models in self.added_models.items(): 
+            for i, model in enumerate(models): 
+                if model.bus_idx == new_model.bus_idx: 
+                    if isinstance(model, old_model_type): 
+                        models[i] = new_model
 
-    def change_P_load(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
-        """Note: The indices are the load indices in order from the Excel sheet. """ 
-        for P_new, idx in zip(P_vals_mw, indices): 
-            # self._grid_loads.loc[idx, "p_nom_mw"] = P_new
-            self._grid_loads.at[idx, "p_nom_mw"] = P_new
+    def add_model(self, new_model: BaseComponentModel):
+        if new_model.level in self.added_models: 
+            self.added_models[new_model.level].append(new_model) 
+        else: 
+            self.added_models[new_model.level] = [new_model]
 
-    def change_Q_load(self, indices: Sequence[int], Q_vals_mw: Sequence[float]): 
-        """Note: The indices are the load indices in order from the Excel sheet. """ 
-        for Q_new, idx in zip(Q_vals_mw, indices): 
-            # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
-            self._grid_loads.at[idx, "q_nom_mvar"] = Q_new
-
-    def change_P_static_gen(self, indices: Sequence[int], P_vals_mw: Sequence[float]): 
-        """Note: The indices are the load indices in order from the Excel sheet. """ 
-        for P_new, idx in zip(P_vals_mw, indices): 
-            # self._grid_loads.loc[idx, "p_nom_mw"] = P_new
-            self._grid_static_gens.at[idx, "p_set_mw"] = P_new
-
-    def change_Q_static_gen(self, indices: Sequence[int], Q_vals_mw: Sequence[float]): 
-        """Note: The indices are the load indices in order from the Excel sheet. """ 
-        for Q_new, idx in zip(Q_vals_mw, indices): 
-            # self._grid_loads.loc[idx, "q_nom_mvar"] = Q_new
-            self._grid_static_gens.at[idx, "q_set_mvar"] = Q_new
+    def remove_model(self, bus_idx: int, model_type: BaseComponentModel): 
+        for level, models in self.base_models.items(): 
+            for i, model in enumerate(models): 
+                if model.bus_idx == bus_idx: 
+                    if isinstance(model, model_type): 
+                        models.remove(models[i])
+        for level, models in self.added_models.items(): 
+            for i, model in enumerate(models): 
+                if model.bus_idx == bus_idx: 
+                    if isinstance(model, model_type): 
+                        models.remove(models[i])
 
     def change_lines(self, line_idx: Sequence[int], 
                     r_new: Optional[Sequence[float]]=None,

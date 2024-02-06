@@ -3,7 +3,7 @@ from typing import Optional
 
 from simplepower.utils import PQVD
 
-from .base_models import BaseComponentModel, BusType
+from .base_models import BaseComponentModel 
 from ..utils import BaseTimeSeries, PQVD 
 
 
@@ -24,9 +24,8 @@ class GeneratorVDroop(BaseComponentModel):
         dV = V - V_ref 
         dQ = (Q - Q_ref) + dV*k_droop 
         """
-        bus_type = BusType.PQ
         data = BaseTimeSeries(0.0, 0.0)
-        super().__init__(bus_idx, bus_type, data)
+        super().__init__(bus_idx, data)
         self.V_ref = V_ref 
         self.Q_ref = Q_ref
         self.k_droop = k_droop 
@@ -56,8 +55,7 @@ class GeneratorVoltageLimiter(BaseComponentModel):
         ---
         Q_g = Q_ref + (max(V_min - V_g, 0) + min(V_g_max - V_g, 0))*delta_Q
         """
-        bus_type = BusType.PQ
-        super().__init__(bus_idx, bus_type, limiter_data)
+        super().__init__(bus_idx, limiter_data)
         self.delta_Q = delta_Q
     
     def P_add_equation(self, pqvd: PQVD, time_idx: int):
@@ -84,8 +82,7 @@ class GeneratorVControlPQ(BaseComponentModel):
         ---
         Q_g = Q_ref + (max(V_min - V_g, 0) + min(V_g_max - V_g, 0))*delta_Q
         """
-        bus_type = BusType.PQ
-        super().__init__(bus_idx, bus_type, V_ref_data)
+        super().__init__(bus_idx, V_ref_data)
         self.delta_Q = delta_Q
     
     def P_add_equation(self, pqvd: PQVD, time_idx: int):
@@ -96,3 +93,28 @@ class GeneratorVControlPQ(BaseComponentModel):
         P, Q, V, delta = pqvd.iloc_mva(self.bus_idx)
         dQ = (V_ref - V)*self.delta_Q
         return dQ
+    
+
+class DistributedPSlack(BaseComponentModel): 
+    def __init__(self, bus_idx: int, slack_bus_idx: int, weight: float = 100.0): 
+        """
+        Distributed Slack Component
+        --- 
+
+        Forces the slack bus to produce close to 0 active power
+        bus_idx: the bus where the generator is located 
+        slack_bus_idx: the bus index where the slack bus is located 
+        weight: A high value means  [0, 1] 
+        
+        Equations
+        ---
+        P_g_add = P_slack * share + P_add_integral
+        """
+        super().__init__(bus_idx, None, level=-1) 
+        self.weight = weight 
+        self.slack_bus_idx = slack_bus_idx
+
+    def P_add_equation(self, pqvd: PQVD, time_idx: int) -> float:
+        P_slack, _, _, _ = pqvd.iloc_mva(self.slack_bus_idx)
+        P_new = P_slack * self.weight
+        return P_new

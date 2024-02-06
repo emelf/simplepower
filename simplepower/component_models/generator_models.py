@@ -3,7 +3,7 @@ from typing import Optional
 
 from simplepower.utils import PQVD
 
-from .base_models import BaseComponentModel, BusType
+from .base_models import BaseComponentModel 
 from ..utils import BaseTimeSeries, PQVD 
 
 
@@ -14,8 +14,7 @@ class BasePQGenerator(BaseComponentModel):
         --- 
         Used for adding the power reference to a generator with controls 
         """
-        bus_type = BusType.PQ
-        super().__init__(bus_idx, bus_type, PQ_data)
+        super().__init__(bus_idx, PQ_data)
     
     def P_add_equation(self, pqvd: PQVD, time_idx: int) -> float:
         P0, Q0 = self.data.iloc(time_idx) 
@@ -33,8 +32,7 @@ class BasePVGenerator(BaseComponentModel):
         --- 
         Used for adding the power reference to a generator with controls 
         """
-        bus_type = BusType.PV
-        super().__init__(bus_idx, bus_type, PV_data)
+        super().__init__(bus_idx, PV_data)
     
     def P_add_equation(self, pqvd: PQVD, time_idx: int) -> float:
         P0, V0 = self.data.iloc(time_idx) 

@@ -7,9 +7,9 @@ from scipy.optimize import root
 
 from ..utils import PowerFlowResult, PQVD
 from ..data_classes import GridDataClass
-from .base_models import BaseComponentModel 
-from .generator_models import BasePQGenerator, BasePVGenerator
-from .load_PQ_models import BasePQLoad
+from ..component_models.base_models import BaseComponentModel 
+from ..component_models.generator_models import BasePQGenerator, BasePVGenerator
+from ..component_models.load_PQ_models import BasePQLoad
 
 class GridModel: 
     def __init__(self, grid_data: GridDataClass, 
@@ -18,7 +18,16 @@ class GridModel:
         self.y_bus = self.md.get_Y_bus() 
         self.y_lines = self.md.get_Y_lines() 
         self.P_mask, self.Q_mask, self.V_mask, self.delta_mask = self.md.get_PQVd_mask()  
-        self.models = models
+        self._get_model_levels(models)
+
+    def _get_model_levels(self, models: Sequence[BaseComponentModel]):
+        levels = []
+        for model in models: 
+            levels.append(model.level)
+        self._levels = np.unique(levels) 
+        self.models = {level: [] for level in self._levels} 
+        for model in models: 
+            self.models[model.level].append(model)
 
     def _do_pf(self, V_vals, delta_vals, y_bus): 
         # Convert to a vector of complex voltages 
@@ -37,8 +46,7 @@ class GridModel:
         -----------
         """ 
 
-        V_vals, delta_vals = self._get_V_delta_vals(ts)
-        # P_vals, Q_vals = self._get_PQ_vals(ts)
+        V_vals, delta_vals = self.md._get_V_delta_vals(ts)
 
         def pf_eqs(X): 
             _delta_vals = delta_vals.copy()
@@ -49,7 +57,7 @@ class GridModel:
 
             P_calc, Q_calc = self._do_pf(_V_vals, _delta_vals, self.y_bus)
             pqvd_res = PQVD(P_calc, Q_calc, _V_vals, _delta_vals, self.md.S_base_mva, self.md.V_base_kV)
-            P_vals, Q_vals, V_add = self._get_from_models(pqvd_res, ts)
+            P_vals, Q_vals = self.md._get_PQ_vals(pqvd_res, ts) 
 
             P_root = (P_calc - P_vals)[self.P_mask]
             Q_root = (Q_calc - Q_vals)[self.Q_mask]
@@ -69,36 +77,12 @@ class GridModel:
         return sol
     
     def _get_pf_sol(self, sol: OptimizeResult, ts: int): 
-        V_vals, delta_vals = self._get_V_delta_vals(ts)
+        V_vals, delta_vals = self.md._get_V_delta_vals(ts)
         delta_vals[self.delta_mask] = sol.x[:self.md.N_delta]
         V_vals[self.V_mask] = sol.x[self.md.N_delta:]
         P_calc, Q_calc = self._do_pf(V_vals, delta_vals, self.y_bus) 
         return PowerFlowResult(P_calc, Q_calc, V_vals, delta_vals, self.md.S_base_mva, sol)
-    
-    def _get_V_delta_vals(self, time_index: int): 
-        V_vals, delta_vals = self.md.get_V_delta_vals()
-        for model in self.models: 
-            if isinstance(model, BasePVGenerator): 
-                P, V = model.data.iloc(time_index)
-                V_vals[model.bus_idx] = V
-        return V_vals, delta_vals
-    
-    # def _get_PQ_vals(self, time_index: int): 
-    #     P_vals, Q_vals = self.md.get_PQ_vals()
-    #     for model in self.models: 
-    #         if isinstance(model, BasePVGenerator): 
-    #             P_vals[model.bus_idx] = model.P_add_equation(None, time_index)/self.md.S_base_mva
-
-    #         elif isinstance(model, BasePQGenerator): 
-    #             P_vals[model.bus_idx] = model.P_add_equation(None, time_index)/self.md.S_base_mva
-    #             Q_vals[model.bus_idx] = model.Q_add_equation(None, time_index)/self.md.S_base_mva
-
-    #         elif isinstance(model, BasePQLoad): 
-    #             P_vals[model.bus_idx] = -model.P_add_equation(None, time_index)/self.md.S_base_mva
-    #             Q_vals[model.bus_idx] = -model.Q_add_equation(None, time_index)/self.md.S_base_mva
-
-    #     return P_vals, Q_vals
-    
+        
     def powerflow(self, time_index: Optional[Sequence[int]]=None, method="hybr") -> PowerFlowResult: 
         """ 
         If ts (time step) is None, performs powerflow calculation on all available data. 
@@ -139,17 +123,9 @@ class GridModel:
         return pd.DataFrame(is_lim, columns=self.md.columns, index=self.md.indices)
     
     def _get_from_models(self, pqvd: PQVD, time_index: int): 
-        P_add = np.zeros(self.md.N_buses, dtype=float)
-        Q_add = np.zeros(self.md.N_buses, dtype=float)
-        V_add = np.zeros(self.md.N_buses, dtype=float)
-        for model in self.models:
-            P_inj = model.P_add_equation(pqvd, time_index) / self.md.S_base_mva
-            Q_inj = model.Q_add_equation(pqvd, time_index) / self.md.S_base_mva
-            V_inj = model.V_add_equation(pqvd, time_index)
-            P_add[model.bus_idx] += P_inj 
-            Q_add[model.bus_idx] += Q_inj 
-            V_add[model.bus_idx] += V_inj
-        return P_add, Q_add, V_add
+        P_vals, Q_vals = self.md._get_PQ_vals(pqvd, time_index)
+        V_vals, delta_vals = self.md._get_V_delta_vals(pqvd, time_index)
+        return P_vals, Q_vals 
         
     def convert_PV_to_PQ_grid(self, ts): 
         grid_data_PQ = deepcopy(self.md) 
