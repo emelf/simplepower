@@ -12,22 +12,11 @@ from ..component_models.generator_models import BasePQGenerator, BasePVGenerator
 from ..component_models.load_PQ_models import BasePQLoad
 
 class GridModel: 
-    def __init__(self, grid_data: GridDataClass, 
-                 models: Sequence[BaseComponentModel]=[]): 
+    def __init__(self, grid_data: GridDataClass): 
         self.md = grid_data 
         self.y_bus = self.md.get_Y_bus() 
         self.y_lines = self.md.get_Y_lines() 
         self.P_mask, self.Q_mask, self.V_mask, self.delta_mask = self.md.get_PQVd_mask()  
-        self._get_model_levels(models)
-
-    def _get_model_levels(self, models: Sequence[BaseComponentModel]):
-        levels = []
-        for model in models: 
-            levels.append(model.level)
-        self._levels = np.unique(levels) 
-        self.models = {level: [] for level in self._levels} 
-        for model in models: 
-            self.models[model.level].append(model)
 
     def _do_pf(self, V_vals, delta_vals, y_bus): 
         # Convert to a vector of complex voltages 
@@ -147,6 +136,8 @@ class GridModel:
         N_gens = len(grid_data_PQ._grid_gens)
         gen_idx = [i for i in range(N_gens) if i != idx_slack]
         grid_data_PQ._grid_gens.drop(index=gen_idx, inplace=True)
+        grid_data_PQ._define_PQV_models([])
+        grid_data_PQ._give_added_models(self.md.added_models)
         return grid_data_PQ
 
                 

@@ -2,6 +2,7 @@ from typing import Optional, Sequence, Tuple
 import pandas as pd 
 import numpy as np 
 from enum import Enum
+from copy import deepcopy 
 
 from .branch_model import LineDataClass, TrafoDataClass
 from ..component_models import BasePQGenerator, BasePVGenerator, BasePQLoad, BaseComponentModel
@@ -213,6 +214,9 @@ class GridDataClass:
 
         self.base_models = self._get_model_dict(models)
         self.added_models = self._get_model_dict(other_models)
+    
+    def _give_added_models(self, added_models: dict): 
+        self.added_models = deepcopy(added_models)
 
     def _get_model_dict(self, models: list[BaseComponentModel]):
         levels = []
