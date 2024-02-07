@@ -1,10 +1,10 @@
 import numpy as np 
 from typing import Optional
 
-from simplepower.utils import PQVD
+from simplepower.common import PQVD
 
 from .base_models import BaseComponentModel 
-from ..utils import BaseTimeSeries, PQVD 
+from ..common import BaseTimeSeries, PQVD 
 
 
 class GeneratorVDroop(BaseComponentModel): 

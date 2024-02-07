@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd 
 from scipy.optimize import root
 
-from ..utils import PowerFlowResult, PQVD
+from ..common import PowerFlowResult, PQVD
 from ..data_classes import GridDataClass
 from ..component_models.base_models import BaseComponentModel 
 from ..component_models.generator_models import BasePQGenerator, BasePVGenerator

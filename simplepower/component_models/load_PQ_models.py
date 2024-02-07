@@ -2,7 +2,7 @@ import numpy as np
 from typing import Optional
 
 from .base_models import BaseComponentModel 
-from ..utils import BaseTimeSeries, PQVD 
+from ..common import BaseTimeSeries, PQVD 
 
 class BasePQLoad(BaseComponentModel): 
     def __init__(self, bus_idx: int, PQ_data: BaseTimeSeries): 

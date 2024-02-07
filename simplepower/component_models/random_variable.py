@@ -3,7 +3,7 @@ from typing import Generator, Optional
 from enum import Enum
 
 from .base_models import BaseComponentModel
-from ..utils import BaseTimeSeries
+from ..common import BaseTimeSeries
 
 class RandomPQVariable(BaseComponentModel): 
     """Used for either PQ or PV random variable in the grid. 

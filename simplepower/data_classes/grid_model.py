@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from .branch_model import LineDataClass, TrafoDataClass
 from ..component_models import BasePQGenerator, BasePVGenerator, BasePQLoad, BaseComponentModel
-from ..utils import BaseTimeSeries, PQVD
+from ..common import BaseTimeSeries, PQVD
 
 class ExcelImport: 
     def __init__(self, filename): 
