@@ -1,7 +1,7 @@
 from typing import Optional, Sequence
 from abc import ABC 
 from enum import Enum
-from ..utils import PQVD, BaseTimeSeries
+from ..common import PQVD, BaseTimeSeries
         
 
 class BaseComponentModel(ABC):
